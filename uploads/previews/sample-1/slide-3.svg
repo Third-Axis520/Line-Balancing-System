@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+    <defs>
+      <linearGradient id="bg3" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#090d16"/><stop offset="100%" stop-color="#141e33"/></linearGradient>
+      <linearGradient id="pGrad3" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#f97316"/><stop offset="100%" stop-color="#fb923c"/></linearGradient>
+    </defs>
+    <rect width="1920" height="1080" fill="url(#bg3)"/>
+    <rect x="0" y="0" width="1920" height="12" fill="url(#pGrad3)"/>
+    <rect x="80" y="50" width="1760" height="90" rx="16" fill="#1e293b" fill-opacity="0.8" stroke="#334155" stroke-width="2"/>
+    <rect x="110" y="72" width="140" height="46" rx="10" fill="#f97316" fill-opacity="0.2" stroke="#f97316" stroke-width="2"/>
+    <text x="180" y="102" fill="#f97316" font-family="sans-serif" font-size="20" font-weight="bold" text-anchor="middle">总装IE改善</text>
+    <text x="280" y="105" fill="#f8fafc" font-family="sans-serif" font-size="28" font-weight="800">总装车间A线平衡率提升与节拍优化改善案</text>
+    <text x="1780" y="105" fill="#94a3b8" font-family="monospace" font-size="22" font-weight="bold" text-anchor="end">SLIDE 03 / 05</text>
+
+    <text x="80" y="210" fill="#38bdf8" font-family="sans-serif" font-size="20" font-weight="bold" letter-spacing="2">03 / COMPARISON &amp; RESULTS</text>
+    <text x="80" y="265" fill="#ffffff" font-family="sans-serif" font-size="44" font-weight="800">改善后工位平衡山积图对比与效益核算</text>
+
+    <!-- 4 KPI Big Metric Blocks -->
+    <g transform="translate(80, 310)">
+      <rect width="410" height="180" rx="16" fill="#0f172a" stroke="#10b981" stroke-width="2"/>
+      <text x="40" y="50" fill="#94a3b8" font-size="18" font-weight="bold">线平衡率 (Balance Rate)</text>
+      <text x="40" y="115" fill="#10b981" font-size="52" font-weight="800">91.2%</text>
+      <text x="40" y="155" fill="#34d399" font-size="16">改善前 68.4% (▲提升 22.8%)</text>
+    </g>
+
+    <g transform="translate(530, 310)">
+      <rect width="410" height="180" rx="16" fill="#0f172a" stroke="#38bdf8" stroke-width="2"/>
+      <text x="40" y="50" fill="#94a3b8" font-size="18" font-weight="bold">生产节拍 (Cycle Time)</text>
+      <text x="40" y="115" fill="#38bdf8" font-size="52" font-weight="800">86s</text>
+      <text x="40" y="155" fill="#7dd3fc" font-size="16">瓶颈由 120s 压降至 86s (▼压缩28.3%)</text>
+    </g>
+
+    <g transform="translate(980, 310)">
+      <rect width="410" height="180" rx="16" fill="#0f172a" stroke="#f59e0b" stroke-width="2"/>
+      <text x="40" y="50" fill="#94a3b8" font-size="18" font-weight="bold">单班合格品产出</text>
+      <text x="40" y="115" fill="#f59e0b" font-size="52" font-weight="800">335台</text>
+      <text x="40" y="155" fill="#fbbf24" font-size="16">改善前 240台 (▲增产 39.5%)</text>
+    </g>
+
+    <g transform="translate(1430, 310)">
+      <rect width="410" height="180" rx="16" fill="#0f172a" stroke="#a855f7" stroke-width="2"/>
+      <text x="40" y="50" fill="#94a3b8" font-size="18" font-weight="bold">人员编制优化</text>
+      <text x="40" y="115" fill="#a855f7" font-size="52" font-weight="800">11人</text>
+      <text x="40" y="155" fill="#c084fc" font-size="16">原编制 12人 (优化1人调配至二线)</text>
+    </g>
+
+    <!-- Visual Improved Balance Mountain Chart (86s smooth line) -->
+    <g transform="translate(80, 520)">
+      <rect width="1760" height="350" rx="20" fill="#0f172a" stroke="#334155" stroke-width="2"/>
+      <text x="40" y="45" fill="#f8fafc" font-size="20" font-weight="bold">改善后工位平衡山积图 (全线工位工时均衡在 80~86秒 高效安全区间)</text>
+      
+      <!-- Target & Limit Line 86s -->
+      <line x1="100" y1="120" x2="1660" y2="120" stroke="#10b981" stroke-width="3"/>
+      <text x="1670" y="125" fill="#10b981" font-size="16" font-weight="bold">平准节拍: 86s</text>
+
+      <!-- 11 Balanced Stations -->
+      <g transform="translate(100, 0)">
+        <!-- Station 1: 78s -->
+        <rect x="0" y="145" width="85" height="135" rx="6" fill="#10b981"/>
+        <text x="42" y="135" fill="#cbd5e1" font-size="14" text-anchor="middle">78s</text>
+        <text x="42" y="305" fill="#94a3b8" font-size="14" text-anchor="middle">工位1 (外壳)</text>
+
+        <!-- Station 2: 82s -->
+        <rect x="135" y="132" width="85" height="148" rx="6" fill="#10b981"/>
+        <text x="177" y="122" fill="#cbd5e1" font-size="14" text-anchor="middle">82s</text>
+        <text x="177" y="305" fill="#94a3b8" font-size="14" text-anchor="middle">工位2 (线束)</text>
+
+        <!-- Station 3: 84s -->
+        <rect x="270" y="126" width="85" height="154" rx="6" fill="#10b981"/>
+        <text x="312" y="116" fill="#cbd5e1" font-size="14" text-anchor="middle">84s</text>
+        <text x="312" y="305" fill="#94a3b8" font-size="14" text-anchor="middle">工位3 (预锁)</text>
+
+        <!-- Station 4: 86s (BottleNeck Solved!) -->
+        <rect x="405" y="120" width="85" height="160" rx="6" fill="#f97316"/>
+        <text x="447" y="110" fill="#f97316" font-size="15" font-weight="bold" text-anchor="middle">86s (达标)</text>
+        <text x="447" y="305" fill="#f97316" font-size="14" font-weight="bold" text-anchor="middle">工位4 (送螺丝)</text>
+
+        <!-- Station 5: 85s (Merged) -->
+        <rect x="540" y="123" width="85" height="157" rx="6" fill="#10b981"/>
+        <text x="582" y="113" fill="#cbd5e1" font-size="14" text-anchor="middle">85s</text>
+        <text x="582" y="305" fill="#94a3b8" font-size="14" text-anchor="middle">工位5 (端子+贴)</text>
+
+        <!-- Station 6: 80s -->
+        <rect x="675" y="138" width="85" height="142" rx="6" fill="#10b981"/>
+        <text x="717" y="128" fill="#cbd5e1" font-size="14" text-anchor="middle">80s</text>
+        <text x="717" y="305" fill="#94a3b8" font-size="14" text-anchor="middle">工位6 (按键板)</text>
+
+        <!-- Station 7: 82s (Dual Channel Program) -->
+        <rect x="810" y="132" width="85" height="148" rx="6" fill="#f97316"/>
+        <text x="852" y="122" fill="#f97316" font-size="15" font-weight="bold" text-anchor="middle">82s (达标)</text>
+        <text x="852" y="305" fill="#f97316" font-size="14" font-weight="bold" text-anchor="middle">工位7 (双烧录)</text>
+
+        <!-- Station 8: 84s -->
+        <rect x="945" y="126" width="85" height="154" rx="6" fill="#10b981"/>
+        <text x="987" y="116" fill="#cbd5e1" font-size="14" text-anchor="middle">84s</text>
+        <text x="987" y="305" fill="#94a3b8" font-size="14" text-anchor="middle">工位8 (通电测)</text>
+
+        <!-- Station 9: 83s -->
+        <rect x="1080" y="129" width="85" height="151" rx="6" fill="#10b981"/>
+        <text x="1122" y="119" fill="#cbd5e1" font-size="14" text-anchor="middle">83s</text>
+        <text x="1122" y="305" fill="#94a3b8" font-size="14" text-anchor="middle">工位9 (封壳)</text>
+
+        <!-- Station 10: 81s -->
+        <rect x="1215" y="135" width="85" height="145" rx="6" fill="#10b981"/>
+        <text x="1257" y="125" fill="#cbd5e1" font-size="14" text-anchor="middle">81s</text>
+        <text x="1257" y="305" fill="#94a3b8" font-size="14" text-anchor="middle">工位10 (耐压)</text>
+
+        <!-- Station 11: 79s -->
+        <rect x="1350" y="141" width="85" height="139" rx="6" fill="#10b981"/>
+        <text x="1392" y="131" fill="#cbd5e1" font-size="14" text-anchor="middle">79s</text>
+        <text x="1392" y="305" fill="#94a3b8" font-size="14" text-anchor="middle">工位11 (包装)</text>
+      </g>
+      <line x1="80" y1="280" x2="1550" y2="280" stroke="#475569" stroke-width="2"/>
+    </g>
+
+    <text x="80" y="1030" fill="#64748b" font-family="sans-serif" font-size="16">IE精益工程部 • 杜工程师编制 • 生产现场实操课件</text>
+    <text x="1840" y="1030" fill="#64748b" font-family="sans-serif" font-size="16" text-anchor="end">总装车间A线平衡改善 • 第 3 页</text>
+  </svg>

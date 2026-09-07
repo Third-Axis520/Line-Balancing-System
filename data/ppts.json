@@ -1,0 +1,457 @@
+[
+  {
+    "id": "ppt-1788441026003-teirf",
+    "title": "Pre-costing手册V3_5.15(2)",
+    "originalFileName": "Pre-costingæåV3_5.15(2).pptx",
+    "storedFileName": "ppt-1788441025974-877256451.pptx",
+    "fileSize": 3837549,
+    "fileUrl": "/api/ppts/ppt-1788441026003-teirf/download",
+    "category": "现场陈列与美陈",
+    "version": "v1.0 (现场执行版)",
+    "uploader": "企划部",
+    "uploadDate": "2026-09-03 13:10",
+    "updateDate": "2026-09-03 13:10",
+    "description": "test",
+    "slideCount": 14,
+    "imageCount": 14,
+    "images": [
+      "/uploads/previews/ppt-1788441026003-teirf/slide-01.png",
+      "/uploads/previews/ppt-1788441026003-teirf/slide-02.png",
+      "/uploads/previews/ppt-1788441026003-teirf/slide-03.png",
+      "/uploads/previews/ppt-1788441026003-teirf/slide-04.png",
+      "/uploads/previews/ppt-1788441026003-teirf/slide-05.png",
+      "/uploads/previews/ppt-1788441026003-teirf/slide-06.png",
+      "/uploads/previews/ppt-1788441026003-teirf/slide-07.png",
+      "/uploads/previews/ppt-1788441026003-teirf/slide-08.png",
+      "/uploads/previews/ppt-1788441026003-teirf/slide-09.png",
+      "/uploads/previews/ppt-1788441026003-teirf/slide-10.png",
+      "/uploads/previews/ppt-1788441026003-teirf/slide-11.png",
+      "/uploads/previews/ppt-1788441026003-teirf/slide-12.png",
+      "/uploads/previews/ppt-1788441026003-teirf/slide-13.png",
+      "/uploads/previews/ppt-1788441026003-teirf/slide-14.png"
+    ],
+    "downloadCount": 0,
+    "isPinned": false,
+    "targetDepartment": "现场全体执行人员",
+    "tags": [
+      "高清图解",
+      "现场执行",
+      "企划首发"
+    ],
+    "slides": [
+      {
+        "slideNumber": 1,
+        "title": "Pre-Costing创建",
+        "paragraphs": [
+          "知道型体季别时, 找到季节进入",
+          "路径: Style -> Season -> 选择型体名",
+          "1",
+          "2"
+        ],
+        "images": [
+          "/uploads/previews/ppt-1788441026003-teirf/img_2.png",
+          "/uploads/previews/ppt-1788441026003-teirf/img_1.png"
+        ],
+        "slideImageUrl": "/uploads/previews/ppt-1788441026003-teirf/slide-01.png"
+      },
+      {
+        "slideNumber": 2,
+        "title": "找到型体进入",
+        "paragraphs": [
+          "3",
+          "4"
+        ],
+        "images": [
+          "/uploads/previews/ppt-1788441026003-teirf/img_4.png",
+          "/uploads/previews/ppt-1788441026003-teirf/img_3.png"
+        ],
+        "slideImageUrl": "/uploads/previews/ppt-1788441026003-teirf/slide-02.png"
+      },
+      {
+        "slideNumber": 3,
+        "title": "只知道型体，也可以切换搜索条件为Style or Colorway，按照型体搜索，点击进入",
+        "paragraphs": [
+          "1",
+          "2",
+          "3"
+        ],
+        "images": [
+          "/uploads/previews/ppt-1788441026003-teirf/img_6.png",
+          "/uploads/previews/ppt-1788441026003-teirf/img_5.png",
+          "/uploads/previews/ppt-1788441026003-teirf/img_4.png"
+        ],
+        "slideImageUrl": "/uploads/previews/ppt-1788441026003-teirf/slide-03.png"
+      },
+      {
+        "slideNumber": 4,
+        "title": "选择有勾选Merge Test 的CBD，点击进入",
+        "paragraphs": [
+          "（costing&pre-costing合并操作页面，Merge Test必须打勾，由报价打勾）",
+          "路径：Costing -> CBD ->选择打勾的CBD"
+        ],
+        "images": [
+          "/uploads/previews/ppt-1788441026003-teirf/img_7.png"
+        ],
+        "slideImageUrl": "/uploads/previews/ppt-1788441026003-teirf/slide-04.png"
+      },
+      {
+        "slideNumber": 5,
+        "title": "进入后看下面的MergeMaterialCost的部分，视图切换为：Views：CBD Detail---Merge (for pre-costing)",
+        "paragraphs": [],
+        "images": [
+          "/uploads/previews/ppt-1788441026003-teirf/img_8.png"
+        ],
+        "slideImageUrl": "/uploads/previews/ppt-1788441026003-teirf/slide-05.png"
+      },
+      {
+        "slideNumber": 6,
+        "title": "点击Fill Supplier Quote按钮，获取材料默认量产报价（即Supplier Quote）",
+        "paragraphs": [
+          "注：如果没有自动带出，可以在Supplier Quote栏位手动选择",
+          "注：如果有替代材料，记得在Material 栏位选择代替材料，再获取量产报价",
+          "注意：",
+          "1.当材料资料完整，手动选择没有SupplierQuote可以选，可能是Costing没有建材料量产价，那要请Costing建价格",
+          "2.同一笔材料因为颜色或者分段有所不同，如果点击按钮后没有自动带入，需要手动选择；如果自动带入默认的报价单，不是Pre-costing需要的，也可以手动修改，但注意修改后不要再点击Fill Supplier Quote的按钮，以免被默认报价单覆盖"
+        ],
+        "images": [
+          "/uploads/previews/ppt-1788441026003-teirf/img_9.png",
+          "/uploads/previews/ppt-1788441026003-teirf/img_11.png",
+          "/uploads/previews/ppt-1788441026003-teirf/img_10.png"
+        ],
+        "slideImageUrl": "/uploads/previews/ppt-1788441026003-teirf/slide-06.png"
+      },
+      {
+        "slideNumber": 7,
+        "title": "维护实际用量",
+        "paragraphs": [
+          "注意：Costed Size Diff（用量差异）、Costed Size Diff %（用量差异率），差异与差异率小于0，会用红色提示（即：量产用量>计算用量，量产价>业务价）"
+        ],
+        "images": [
+          "/uploads/previews/ppt-1788441026003-teirf/img_12.png"
+        ],
+        "slideImageUrl": "/uploads/previews/ppt-1788441026003-teirf/slide-07.png"
+      },
+      {
+        "slideNumber": 8,
+        "title": "继续往右滑动，在后面确认是否不包含利润计算、是否丢弃该项材料（使其不加入计算）",
+        "paragraphs": [],
+        "images": [
+          "/uploads/previews/ppt-1788441026003-teirf/img_13.png"
+        ],
+        "slideImageUrl": "/uploads/previews/ppt-1788441026003-teirf/slide-08.png"
+      },
+      {
+        "slideNumber": 9,
+        "title": "MergeMaterialCost上方为 Summary（汇总），自动汇总结果",
+        "paragraphs": [],
+        "images": [
+          "/uploads/previews/ppt-1788441026003-teirf/img_14.png"
+        ],
+        "slideImageUrl": "/uploads/previews/ppt-1788441026003-teirf/slide-09.png"
+      },
+      {
+        "slideNumber": 10,
+        "title": "资料完成后，点击右上角Action，选择Freeze（冻结）",
+        "paragraphs": [
+          "如果审批后需要修改，再回到Action，选择Reopen（重新打开）"
+        ],
+        "images": [
+          "/uploads/previews/ppt-1788441026003-teirf/img_15.png",
+          "/uploads/previews/ppt-1788441026003-teirf/img_16.png"
+        ],
+        "slideImageUrl": "/uploads/previews/ppt-1788441026003-teirf/slide-10.png"
+      },
+      {
+        "slideNumber": 11,
+        "title": "利潤分析表",
+        "paragraphs": [
+          "给配色设置默认Pre-Costing",
+          "①.切换到Style（型体）下Colorway（配色）页面，给配色选择默认的PreCosting，自动代出Pre-Costing Full FOB",
+          "②.往右滑动，继续填写其他信息：Cutting PPH、Stitching PPH、Assembly PPH等"
+        ],
+        "images": [
+          "/uploads/previews/ppt-1788441026003-teirf/img_17.png"
+        ],
+        "slideImageUrl": "/uploads/previews/ppt-1788441026003-teirf/slide-11.png"
+      },
+      {
+        "slideNumber": 12,
+        "title": "幻灯片 12",
+        "paragraphs": [],
+        "images": [
+          "/uploads/previews/ppt-1788441026003-teirf/img_18.png"
+        ],
+        "slideImageUrl": "/uploads/previews/ppt-1788441026003-teirf/slide-12.png"
+      },
+      {
+        "slideNumber": 13,
+        "title": "季节下，Colorway页面切换Pre-Costing Summary视图，可以查看该季节下的季报表",
+        "paragraphs": [],
+        "images": [
+          "/uploads/previews/ppt-1788441026003-teirf/img_19.png"
+        ],
+        "slideImageUrl": "/uploads/previews/ppt-1788441026003-teirf/slide-13.png"
+      },
+      {
+        "slideNumber": 14,
+        "title": "幻灯片 14",
+        "paragraphs": [],
+        "images": [
+          "/uploads/previews/ppt-1788441026003-teirf/img_21.png",
+          "/uploads/previews/ppt-1788441026003-teirf/img_20.png"
+        ],
+        "slideImageUrl": "/uploads/previews/ppt-1788441026003-teirf/slide-14.png"
+      }
+    ]
+  },
+  {
+    "id": "sample-1",
+    "title": "总装车间A线平衡率提升与节拍优化改善案",
+    "originalFileName": "总装车间A线平衡率提升与节拍优化改善案.pptx",
+    "storedFileName": "2026全国春季新品发布会-现场陈列与展台动线全案.pptx",
+    "fileSize": 18510,
+    "fileUrl": "/api/ppts/sample-1/download",
+    "category": "生产线平衡与节拍改善",
+    "version": "v2.0 (实施定案)",
+    "uploader": "IE精益改善推进室 - 杜工程师",
+    "uploadDate": "2026-09-01 14:30",
+    "updateDate": "2026-09-02 18:15",
+    "description": "针对总装A线工位4与工位8节拍严重不均（平衡率仅68.4%）的瓶颈问题，运用IE手法、动素分析与ECRS法则实施重组改善。节拍从120s压缩至86s，平衡率跃升至91.2%，单班产出由240台提升至335台。",
+    "slideCount": 5,
+    "imageCount": 5,
+    "images": [
+      "/uploads/previews/sample-1/slide-1.svg",
+      "/uploads/previews/sample-1/slide-2.svg",
+      "/uploads/previews/sample-1/slide-3.svg",
+      "/uploads/previews/sample-1/slide-4.svg",
+      "/uploads/previews/sample-1/slide-5.svg"
+    ],
+    "downloadCount": 129,
+    "isPinned": true,
+    "targetDepartment": "总装车间 / IE精益工程部",
+    "tags": [
+      "线平衡率91%",
+      "节拍优化",
+      "ECRS四原则",
+      "瓶颈改善"
+    ],
+    "slides": [
+      {
+        "slideNumber": 1,
+        "title": "项目背景与线平衡现状瓶颈诊断",
+        "paragraphs": [
+          "【现状调研】总装A线全线配置12个作业工位，设计节拍为90秒，但实际生产节拍受工位4限制达到120秒。",
+          "【平衡率指标】全线总周期时间为985秒，线平衡率(Balance Rate)仅为68.4%，平衡损失率高达31.6%。",
+          "【瓶颈与堆积】工位4（主控板锁附）与工位8（固件烧录）成为严重卡点，工位前半成品堆积量超过15台，后续工位频繁处于饥饿等待状态。",
+          "【目标设定】应用ECRS法则将瓶颈工时缩减至90秒以内，全线平衡率提升至88%以上，单班产量由240台提升至320台。"
+        ],
+        "images": [
+          "/uploads/previews/sample-1/img_1.svg"
+        ],
+        "slideImageUrl": "/uploads/previews/sample-1/slide-1.svg"
+      },
+      {
+        "slideNumber": 2,
+        "title": "工位Cycle Time测定与山积图分析",
+        "paragraphs": [
+          "各工位标准工时测定结果（CT秒数）：",
+          "工位1: 75s | 工位2: 82s | 工位3: 68s | 工位4(瓶颈): 120s",
+          "工位5: 72s | 工位6: 65s | 工位7: 60s | 工位8(瓶颈): 115s",
+          "工位9: 70s | 工位10: 80s | 工位11: 62s | 工位12: 55s",
+          "【损失原因】工位4需手工抓取8颗微型螺丝并逐一打螺丝，且工装夹具定位繁琐；工位8采用单通道烧录器，等待烧录进度时间占40%以上。"
+        ],
+        "images": [
+          "/uploads/previews/sample-1/img_2.svg"
+        ],
+        "slideImageUrl": "/uploads/previews/sample-1/slide-2.svg"
+      },
+      {
+        "slideNumber": 3,
+        "title": "动素浪费分析与ECRS改善对策实施",
+        "paragraphs": [
+          "【E - 取消】取消手工取螺丝动素，导入吹气式自动送螺丝机，消除抓取和对准浪费，缩短工时16秒。",
+          "【C - 合并】将工位6简单的屏蔽罩贴附动作合并到工位5压接后同步双手操作，减少周转与搬运。",
+          "【R - 重排】将工位4的2颗外壳固定螺丝前移至工位3线束整理时预锁，分流工位4瓶颈负荷22秒。",
+          "【S - 简化】工位8烧录器升级为双通道并发治具，实现取放与烧录并行作业，工位8工时由115s压降至82s。"
+        ],
+        "images": [
+          "/uploads/previews/sample-1/img_3.svg"
+        ],
+        "slideImageUrl": "/uploads/previews/sample-1/slide-3.svg"
+      },
+      {
+        "slideNumber": 4,
+        "title": "改善后工位平衡山积图对比与效益核算",
+        "paragraphs": [
+          "【平衡率跃升】线平衡率由改善前的 68.4% 跃升至 91.2%（提升22.8个百分点）。",
+          "【瓶颈消除】最大工位工时由 120s 降至 86s，达成预定目标（<90s）。",
+          "【人员优化】通过工位合并与负荷重排，线体编制由 12人 优化为 11人，1人转入新增产线。",
+          "【日产能提升】8小时单班有效合格品产出由 240台 增至 335台，提升幅度达 39.5%。"
+        ],
+        "images": [
+          "/uploads/previews/sample-1/img_4.svg"
+        ],
+        "slideImageUrl": "/uploads/previews/sample-1/slide-4.svg"
+      },
+      {
+        "slideNumber": 5,
+        "title": "标准作业组合票(SOP)固化与持续维持",
+        "paragraphs": [
+          "【SOP更新】重新编制发布《总装A线标准作业组合票》及双手对称作业视频教程。",
+          "【Andon电子看板】工位安装节拍报警灯，当作业超过86秒时黄色预警，超过90秒红色报警，线长即时响应支援。",
+          "【多能工培养】建立技能矩阵图，确保关键工位具备2名以上备岗员工，换线与休假不影响整体平衡率。"
+        ],
+        "images": [
+          "/uploads/previews/sample-1/img_5.svg"
+        ],
+        "slideImageUrl": "/uploads/previews/sample-1/slide-5.svg"
+      }
+    ]
+  },
+  {
+    "id": "sample-2",
+    "title": "SMT与插件后焊混流线平衡与柔性化换线改善案例",
+    "originalFileName": "SMT与插件后焊混流线平衡与柔性化换线改善案例.pptx",
+    "storedFileName": "Q2商场端午节主题美陈及快闪店执行方案.pptx",
+    "fileSize": 15191,
+    "fileUrl": "/api/ppts/sample-2/download",
+    "category": "工时与动作经济改善",
+    "version": "v1.5",
+    "uploader": "精益改善科 - 周主管",
+    "uploadDate": "2026-08-28 09:20",
+    "updateDate": "2026-08-30 11:00",
+    "description": "针对多品种小批量混流生产中插件与后焊工位负荷严重失衡问题，通过治具快换、双手作业动线重整及作业要素重新拆解，平衡损失率由28.5%降低至11.4%，换线停顿时间缩减40分钟。",
+    "slideCount": 4,
+    "imageCount": 1,
+    "images": [
+      "/uploads/previews/sample-2/slide-1.png"
+    ],
+    "downloadCount": 94,
+    "isPinned": true,
+    "targetDepartment": "电子制造部 / SMT车间",
+    "tags": [
+      "混流生产",
+      "快速换模SMED",
+      "插件工步拆解",
+      "治具标准化"
+    ],
+    "slides": [
+      {
+        "slideNumber": 1,
+        "title": "混流插件线工步不均衡现状与损失统计",
+        "paragraphs": [
+          "【混流难题】同一产线需轮番生产3款板卡，不同型号元器件数量相差3倍，造成插件工位负荷随型号剧烈波动。",
+          "【平衡损失】A型号平衡率为72.1%，B型号仅61.5%，C型号68.0%，平均平衡损失率达32.8%。",
+          "【换线瓶颈】每次换型时需调整料盒位置与轨道宽度，平均停线时间长达55分钟。"
+        ],
+        "images": [
+          "/uploads/previews/sample-2/img_1.svg"
+        ],
+        "slideImageUrl": "/uploads/previews/sample-2/slide-1.png"
+      },
+      {
+        "slideNumber": 2,
+        "title": "插件工序双手动作重整与料盒摆放优化",
+        "paragraphs": [
+          "【动作经济原则】根据双手作业半径（40cm黄金区），将原本散布在作业台深处的料盒改为梯级阶梯式重力供料盒。",
+          "【双手对称作业】改变右手单手插装、左手单纯托板的习惯，重新编排元器件插装顺序，实现双手同时插装对称元件。",
+          "【疲劳度降低】手腕旋转和前倾抓取动作减少65%，单板插件工时直接压缩24%。"
+        ],
+        "images": [
+          "/uploads/previews/sample-2/img_2.svg"
+        ]
+      },
+      {
+        "slideNumber": 3,
+        "title": "标准化快换托盘与外装换线(SMED)实施",
+        "paragraphs": [
+          "【内换模转外换模】提前在下线准备区完成下一批次元器件的预分料与快速卡槽排布，换线时直接整体推入。",
+          "【磁吸快锁导轨】取消传统螺栓调宽，改造为带标尺定位销的快速扳手锁紧机构，调宽由15分钟缩短至2分钟。",
+          "【换线成效】综合换线停机时间由55分钟骤降至14分钟，降幅达74.5%。"
+        ],
+        "images": [
+          "/uploads/previews/sample-2/img_3.svg"
+        ]
+      },
+      {
+        "slideNumber": 4,
+        "title": "产线平衡率综合评价与人均PPH跃升",
+        "paragraphs": [
+          "【平衡率指标】全型号综合产线平衡率提升至 88.6%，平衡损失率压降至 11.4%。",
+          "【柔性产能】每天可多完成2个批次的灵活转产，准时交付率(OTD)提升至 99.2%。",
+          "【人均产出】插件组人均每小时产出(PPH)提升 24.6%，节约直接作业人工2名。"
+        ],
+        "images": [
+          "/uploads/previews/sample-2/img_4.svg"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "sample-3",
+    "title": "注塑与成品装配单元单件流(One-Piece-Flow)平衡改造",
+    "originalFileName": "注塑与成品装配单元单件流平衡改造.pptx",
+    "storedFileName": "大型路演现场应急预案与疏散通道部署指引.pptx",
+    "fileSize": 11841,
+    "fileUrl": "/api/ppts/sample-3/download",
+    "category": "单件流与布局改善",
+    "version": "v3.0",
+    "uploader": "精益生产办 - 孙专家",
+    "uploadDate": "2026-08-25 16:40",
+    "updateDate": "2026-08-25 16:40",
+    "description": "取消传统批量工序间周转搬运，采用U型布局单元线与走动式作业，将原7人离散作业重构为5人平衡单元，WIP在制品库存降低62%，生产周期缩短45%。",
+    "slideCount": 3,
+    "imageCount": 1,
+    "images": [
+      "/uploads/previews/sample-3/slide-1.png"
+    ],
+    "downloadCount": 165,
+    "isPinned": false,
+    "targetDepartment": "注塑装配分厂 / 精益车间",
+    "tags": [
+      "单件流",
+      "U型产线",
+      "在制品清零",
+      "走动式作业"
+    ],
+    "slides": [
+      {
+        "slideNumber": 1,
+        "title": "传统批量搬运瓶颈与半成品WIP积压现状",
+        "paragraphs": [
+          "【离散布局痛点】注塑机下线后按批（500件/箱）堆放于托盘，转运至装配区需叉车搬运，导致工序间WIP积压严重（平均积压达3200件）。",
+          "【品质隐患】批量生产中若模具有毛边异常，往往要到成品组装时才被发现，造成大批量报废和返工。",
+          "【平衡损失】注塑机节拍与人工装配节拍脱节，操作工在等待零件与搬运箱体间来回折返。"
+        ],
+        "images": [
+          "/uploads/previews/sample-3/img_1.svg"
+        ],
+        "slideImageUrl": "/uploads/previews/sample-3/slide-1.png"
+      },
+      {
+        "slideNumber": 2,
+        "title": "U型线单元重构与单件流动线设计",
+        "paragraphs": [
+          "【紧凑U型布局】将注塑机取件机械手出口与修边、装配、检测、包装紧密围成U型单元，减少行走步数80%。",
+          "【重力滚筒滑道】工位之间设置1件容量的重力倾斜滚筒，前工序完成立即滑入下一工位，实现单件流送达。",
+          "【多能工走动管理】员工按顺时针方向进行多工序接力作业，各环节工时动态互补，实现自然节拍平衡。"
+        ],
+        "images": [
+          "/uploads/previews/sample-3/img_2.svg"
+        ]
+      },
+      {
+        "slideNumber": 3,
+        "title": "改造前后成效对比与推广标准化",
+        "paragraphs": [
+          "【在制品减少】生产线在线WIP由 3200件 剧减至 35件（降幅 98.9%），现场空间释放 45平方米。",
+          "【制造周期】产品从注塑到打包下线的全制程时间由 4.5小时 缩短为 8分钟。",
+          "【品质良率】不良品在单件流流动中实现100%首件即时发现，报废率由 1.8% 降至 0.12% 以下。"
+        ],
+        "images": [
+          "/uploads/previews/sample-3/img_3.svg"
+        ]
+      }
+    ]
+  }
+]

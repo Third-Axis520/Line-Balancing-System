@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+    <defs>
+      <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#090d16"/><stop offset="100%" stop-color="#141e33"/></linearGradient>
+      <linearGradient id="pGrad2" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#f97316"/><stop offset="100%" stop-color="#fb923c"/></linearGradient>
+    </defs>
+    <rect width="1920" height="1080" fill="url(#bg2)"/>
+    <rect x="0" y="0" width="1920" height="12" fill="url(#pGrad2)"/>
+    <rect x="80" y="50" width="1760" height="90" rx="16" fill="#1e293b" fill-opacity="0.8" stroke="#334155" stroke-width="2"/>
+    <rect x="110" y="72" width="140" height="46" rx="10" fill="#f97316" fill-opacity="0.2" stroke="#f97316" stroke-width="2"/>
+    <text x="180" y="102" fill="#f97316" font-family="sans-serif" font-size="20" font-weight="bold" text-anchor="middle">总装IE改善</text>
+    <text x="280" y="105" fill="#f8fafc" font-family="sans-serif" font-size="28" font-weight="800">总装车间A线平衡率提升与节拍优化改善案</text>
+    <text x="1780" y="105" fill="#94a3b8" font-family="monospace" font-size="22" font-weight="bold" text-anchor="end">SLIDE 02 / 05</text>
+
+    <text x="80" y="210" fill="#38bdf8" font-family="sans-serif" font-size="20" font-weight="bold" letter-spacing="2">02 / ECRS PRINCIPLES &amp; ACTION PLAN</text>
+    <text x="80" y="265" fill="#ffffff" font-family="sans-serif" font-size="44" font-weight="800">动素浪费分析与ECRS改善对策实施</text>
+
+    <!-- 4 ECRS Grid Cards -->
+    <!-- E: Eliminate -->
+    <g transform="translate(80, 310)">
+      <rect width="840" height="230" rx="16" fill="#0f172a" stroke="#f97316" stroke-width="2"/>
+      <rect x="25" y="25" width="120" height="40" rx="8" fill="#f97316"/>
+      <text x="85" y="52" fill="#ffffff" font-size="18" font-weight="bold" text-anchor="middle">E - 取消 (16s)</text>
+      <text x="165" y="52" fill="#f8fafc" font-size="22" font-weight="bold">取消人工抓取螺丝与视线对准动素</text>
+      <text x="25" y="105" fill="#cbd5e1" font-size="17">【现状动素】工位4操作工右手抓电批，左手伸至料盒抓取微型螺丝，需视线二次对准螺丝孔。</text>
+      <text x="25" y="145" fill="#38bdf8" font-size="17" font-weight="bold">【改善方案】导入桌面吹气式自动送螺丝机，电批下压自动出螺丝，彻底取消抓取与人工对准。</text>
+      <text x="25" y="185" fill="#10b981" font-size="16" font-weight="bold">【效益】单件工时缩短 16秒，员工手腕动作次数降低 50%。</text>
+    </g>
+
+    <!-- C: Combine -->
+    <g transform="translate(1000, 310)">
+      <rect width="840" height="230" rx="16" fill="#0f172a" stroke="#38bdf8" stroke-width="2"/>
+      <rect x="25" y="25" width="120" height="40" rx="8" fill="#38bdf8"/>
+      <text x="85" y="52" fill="#ffffff" font-size="18" font-weight="bold" text-anchor="middle">C - 合并 (12s)</text>
+      <text x="165" y="52" fill="#f8fafc" font-size="22" font-weight="bold">工序动作合并双手对称操作</text>
+      <text x="25" y="105" fill="#cbd5e1" font-size="17">【现状动素】工位6仅贴附屏蔽罩需时65s负荷过低，工位5压接端子后有5秒等待工位6周转。</text>
+      <text x="25" y="145" fill="#38bdf8" font-size="17" font-weight="bold">【改善方案】将屏蔽罩贴附动素合并到工位5，采用双手对称取放治具同时压合。</text>
+      <text x="25" y="185" fill="#10b981" font-size="16" font-weight="bold">【效益】减少中间在制品周转等待，全线节约工位编制1人转调备用。</text>
+    </g>
+
+    <!-- R: Rearrange -->
+    <g transform="translate(80, 580)">
+      <rect width="840" height="230" rx="16" fill="#0f172a" stroke="#f59e0b" stroke-width="2"/>
+      <rect x="25" y="25" width="120" height="40" rx="8" fill="#f59e0b"/>
+      <text x="85" y="52" fill="#ffffff" font-size="18" font-weight="bold" text-anchor="middle">R - 重排 (22s)</text>
+      <text x="165" y="52" fill="#f8fafc" font-size="22" font-weight="bold">重新编排工步负荷前移分流</text>
+      <text x="25" y="105" fill="#cbd5e1" font-size="17">【现状动素】工位4承载了8颗微型螺丝锁附，导致严重超负荷(120s)，而前序工位3仅68s。</text>
+      <text x="25" y="145" fill="#38bdf8" font-size="17" font-weight="bold">【改善方案】将其中2颗外壳固定螺丝前移至工位3线束整理时顺手预锁，合理平衡两工位节拍。</text>
+      <text x="25" y="185" fill="#10b981" font-size="16" font-weight="bold">【效益】直接分流工位4瓶颈负荷 22秒，工位3负荷由68s微增至84s，处于理想节拍区。</text>
+    </g>
+
+    <!-- S: Simplify -->
+    <g transform="translate(1000, 580)">
+      <rect width="840" height="230" rx="16" fill="#0f172a" stroke="#10b981" stroke-width="2"/>
+      <rect x="25" y="25" width="120" height="40" rx="8" fill="#10b981"/>
+      <text x="85" y="52" fill="#ffffff" font-size="18" font-weight="bold" text-anchor="middle">S - 简化 (33s)</text>
+      <text x="165" y="52" fill="#f8fafc" font-size="22" font-weight="bold">工位8固件烧录双通道治具快换</text>
+      <text x="25" y="105" fill="#cbd5e1" font-size="17">【现状动素】工位8单通道烧录需等待45秒，作业员在旁静坐等待烧录进度灯。</text>
+      <text x="25" y="145" fill="#38bdf8" font-size="17" font-weight="bold">【改善方案】自制双通道交替烧录工装，A通道烧录时员工取放B通道，实现取放与测试并行。</text>
+      <text x="25" y="185" fill="#10b981" font-size="16" font-weight="bold">【效益】工序实际人工占用时间由 115秒 压降至 82秒，彻底消除第二瓶颈卡点。</text>
+    </g>
+
+    <text x="80" y="1030" fill="#64748b" font-family="sans-serif" font-size="16">IE精益工程部 • 杜工程师编制 • 生产现场实操课件</text>
+    <text x="1840" y="1030" fill="#64748b" font-family="sans-serif" font-size="16" text-anchor="end">总装车间A线平衡改善 • 第 2 页</text>
+  </svg>

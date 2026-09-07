@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+    <defs>
+      <linearGradient id="bg1" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#090d16"/>
+        <stop offset="100%" stop-color="#141e33"/>
+      </linearGradient>
+      <linearGradient id="primaryGrad" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%" stop-color="#f97316"/>
+        <stop offset="100%" stop-color="#fb923c"/>
+      </linearGradient>
+    </defs>
+    <rect width="1920" height="1080" fill="url(#bg1)"/>
+    <!-- Master Slide Top Bar -->
+    <rect x="0" y="0" width="1920" height="12" fill="url(#primaryGrad)"/>
+    <rect x="80" y="50" width="1760" height="90" rx="16" fill="#1e293b" fill-opacity="0.8" stroke="#334155" stroke-width="2"/>
+    <rect x="110" y="72" width="140" height="46" rx="10" fill="#f97316" fill-opacity="0.2" stroke="#f97316" stroke-width="2"/>
+    <text x="180" y="102" fill="#f97316" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="bold" text-anchor="middle">总装IE改善</text>
+    <text x="280" y="105" fill="#f8fafc" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="28" font-weight="800">总装车间A线平衡率提升与节拍优化改善案</text>
+    <text x="1780" y="105" fill="#94a3b8" font-family="monospace" font-size="22" font-weight="bold" text-anchor="end">SLIDE 01 / 05</text>
+
+    <!-- Slide Title on Canvas -->
+    <text x="80" y="210" fill="#38bdf8" font-family="sans-serif" font-size="20" font-weight="bold" letter-spacing="2">01 / DIAGNOSIS &amp; BOTTLENECK</text>
+    <text x="80" y="265" fill="#ffffff" font-family="sans-serif" font-size="44" font-weight="800">项目背景与线平衡现状瓶颈诊断</text>
+
+    <!-- Left Column: Structured Diagnosis Cards -->
+    <g transform="translate(80, 310)">
+      <rect width="840" height="150" rx="16" fill="#0f172a" stroke="#ef4444" stroke-width="2"/>
+      <rect x="30" y="30" width="90" height="34" rx="8" fill="#ef4444" fill-opacity="0.2"/>
+      <text x="75" y="54" fill="#ef4444" font-family="sans-serif" font-size="16" font-weight="bold" text-anchor="middle">现状瓶颈</text>
+      <text x="140" y="55" fill="#f8fafc" font-family="sans-serif" font-size="24" font-weight="bold">全线平衡率仅 68.4% (严重失衡)</text>
+      <text x="30" y="105" fill="#cbd5e1" font-family="sans-serif" font-size="18" font-weight="normal">全线12工位，工位4(主控板锁附)周期长达120s，工位8(固件烧录)115s，其余工位仅60~75s。</text>
+      <text x="30" y="132" fill="#94a3b8" font-family="sans-serif" font-size="16">严重后果：工位4前堆积超15台WIP，工位5、6频繁饥饿等待，全线日产受阻于240台。</text>
+    </g>
+
+    <g transform="translate(80, 485)">
+      <rect width="840" height="150" rx="16" fill="#0f172a" stroke="#334155" stroke-width="2"/>
+      <rect x="30" y="30" width="90" height="34" rx="8" fill="#f59e0b" fill-opacity="0.2"/>
+      <text x="75" y="54" fill="#f59e0b" font-family="sans-serif" font-size="16" font-weight="bold" text-anchor="middle">动素浪费</text>
+      <text x="140" y="55" fill="#f8fafc" font-family="sans-serif" font-size="24" font-weight="bold">双手动作繁琐与治具等待浪费</text>
+      <text x="30" y="105" fill="#cbd5e1" font-family="sans-serif" font-size="18">工位4需单手多次弯腰抓取微型螺丝(8颗)，工位8单通道烧录等待时间超40秒无效空转。</text>
+      <text x="30" y="132" fill="#94a3b8" font-family="sans-serif" font-size="16">改善依据：应用动作经济原则与ECRS法则拆解重排，消除无效等待动素。</text>
+    </g>
+
+    <g transform="translate(80, 660)">
+      <rect width="840" height="150" rx="16" fill="#0f172a" stroke="#10b981" stroke-width="2"/>
+      <rect x="30" y="30" width="90" height="34" rx="8" fill="#10b981" fill-opacity="0.2"/>
+      <text x="75" y="54" fill="#10b981" font-family="sans-serif" font-size="16" font-weight="bold" text-anchor="middle">目标设定</text>
+      <text x="140" y="55" fill="#f8fafc" font-family="sans-serif" font-size="24" font-weight="bold">节拍降至86s，平衡率冲刺 90%+</text>
+      <text x="30" y="105" fill="#cbd5e1" font-family="sans-serif" font-size="18">消除工位4/8卡点，将瓶颈CT压降至86秒以内；单班产出由240台跃升至330台以上。</text>
+      <text x="30" y="132" fill="#10b981" font-family="sans-serif" font-size="16" font-weight="bold">预期年化节约人工成本与产能增效超 56 万元。</text>
+    </g>
+
+    <!-- Right Column: Visual Cycle Time Diagram -->
+    <g transform="translate(960, 310)">
+      <rect width="880" height="500" rx="20" fill="#0f172a" stroke="#334155" stroke-width="2"/>
+      <text x="40" y="50" fill="#f8fafc" font-family="sans-serif" font-size="22" font-weight="bold">改善前各工位工时(CT)山积图与瓶颈红线</text>
+      
+      <!-- Target Takt Time Line (86s) -->
+      <line x1="80" y1="210" x2="820" y2="210" stroke="#f59e0b" stroke-width="3" stroke-dasharray="8,6"/>
+      <text x="830" y="215" fill="#f59e0b" font-family="sans-serif" font-size="15" font-weight="bold">目标节拍: 86s</text>
+
+      <!-- Bottleneck line (120s) -->
+      <line x1="80" y1="120" x2="820" y2="120" stroke="#ef4444" stroke-width="3"/>
+      <text x="830" y="125" fill="#ef4444" font-family="sans-serif" font-size="15" font-weight="bold">瓶颈: 120s</text>
+
+      <!-- 12 Bar Chart items -->
+      <!-- Bars: St1:75s, St2:82s, St3:68s, St4:120s(red), St5:72s, St6:65s, St7:60s, St8:115s(red), St9:70s, St10:80s, St11:62s, St12:55s -->
+      <!-- baseline y=420 -->
+      <g transform="translate(80, 0)">
+        <!-- St1: 75s => height 180 => y=240 -->
+        <rect x="0" y="240" width="45" height="180" rx="6" fill="#38bdf8"/>
+        <text x="22" y="230" fill="#cbd5e1" font-size="13" text-anchor="middle">75s</text>
+        <text x="22" y="445" fill="#94a3b8" font-size="13" text-anchor="middle">工位1</text>
+
+        <!-- St2: 82s => height 197 => y=223 -->
+        <rect x="60" y="223" width="45" height="197" rx="6" fill="#38bdf8"/>
+        <text x="82" y="213" fill="#cbd5e1" font-size="13" text-anchor="middle">82s</text>
+        <text x="82" y="445" fill="#94a3b8" font-size="13" text-anchor="middle">工位2</text>
+
+        <!-- St3: 68s => height 163 => y=257 -->
+        <rect x="120" y="257" width="45" height="163" rx="6" fill="#38bdf8"/>
+        <text x="142" y="247" fill="#cbd5e1" font-size="13" text-anchor="middle">68s</text>
+        <text x="142" y="445" fill="#94a3b8" font-size="13" text-anchor="middle">工位3</text>
+
+        <!-- St4: 120s => height 288 => y=132 (BOTTLENECK) -->
+        <rect x="180" y="132" width="45" height="288" rx="6" fill="#ef4444"/>
+        <text x="202" y="120" fill="#ef4444" font-size="15" font-weight="bold" text-anchor="middle">120s</text>
+        <text x="202" y="445" fill="#ef4444" font-size="13" font-weight="bold" text-anchor="middle">工位4★</text>
+
+        <!-- St5: 72s => height 173 => y=247 -->
+        <rect x="240" y="247" width="45" height="173" rx="6" fill="#38bdf8"/>
+        <text x="262" y="237" fill="#cbd5e1" font-size="13" text-anchor="middle">72s</text>
+        <text x="262" y="445" fill="#94a3b8" font-size="13" text-anchor="middle">工位5</text>
+
+        <!-- St6: 65s => height 156 => y=264 -->
+        <rect x="300" y="264" width="45" height="156" rx="6" fill="#38bdf8"/>
+        <text x="322" y="254" fill="#cbd5e1" font-size="13" text-anchor="middle">65s</text>
+        <text x="322" y="445" fill="#94a3b8" font-size="13" text-anchor="middle">工位6</text>
+
+        <!-- St7: 60s => height 144 => y=276 -->
+        <rect x="360" y="276" width="45" height="144" rx="6" fill="#38bdf8"/>
+        <text x="382" y="266" fill="#cbd5e1" font-size="13" text-anchor="middle">60s</text>
+        <text x="382" y="445" fill="#94a3b8" font-size="13" text-anchor="middle">工位7</text>
+
+        <!-- St8: 115s => height 276 => y=144 (BOTTLENECK) -->
+        <rect x="420" y="144" width="45" height="276" rx="6" fill="#ef4444"/>
+        <text x="442" y="132" fill="#ef4444" font-size="15" font-weight="bold" text-anchor="middle">115s</text>
+        <text x="442" y="445" fill="#ef4444" font-size="13" font-weight="bold" text-anchor="middle">工位8★</text>
+
+        <!-- St9: 70s => height 168 => y=252 -->
+        <rect x="480" y="252" width="45" height="168" rx="6" fill="#38bdf8"/>
+        <text x="502" y="242" fill="#cbd5e1" font-size="13" text-anchor="middle">70s</text>
+        <text x="502" y="445" fill="#94a3b8" font-size="13" text-anchor="middle">工位9</text>
+
+        <!-- St10: 80s => height 192 => y=228 -->
+        <rect x="540" y="228" width="45" height="192" rx="6" fill="#38bdf8"/>
+        <text x="562" y="218" fill="#cbd5e1" font-size="13" text-anchor="middle">80s</text>
+        <text x="562" y="445" fill="#94a3b8" font-size="13" text-anchor="middle">工位10</text>
+
+        <!-- St11: 62s => height 148 => y=272 -->
+        <rect x="600" y="272" width="45" height="148" rx="6" fill="#38bdf8"/>
+        <text x="622" y="262" fill="#cbd5e1" font-size="13" text-anchor="middle">62s</text>
+        <text x="622" y="445" fill="#94a3b8" font-size="13" text-anchor="middle">工位11</text>
+
+        <!-- St12: 55s => height 132 => y=288 -->
+        <rect x="660" y="288" width="45" height="132" rx="6" fill="#38bdf8"/>
+        <text x="682" y="278" fill="#cbd5e1" font-size="13" text-anchor="middle">55s</text>
+        <text x="682" y="445" fill="#94a3b8" font-size="13" text-anchor="middle">工位12</text>
+      </g>
+      <line x1="60" y1="420" x2="800" y2="420" stroke="#475569" stroke-width="2"/>
+    </g>
+
+    <!-- Footer Master Info -->
+    <text x="80" y="1030" fill="#64748b" font-family="sans-serif" font-size="16">IE精益工程部 • 杜工程师编制 • 生产现场实操课件</text>
+    <text x="1840" y="1030" fill="#64748b" font-family="sans-serif" font-size="16" text-anchor="end">总装车间A线平衡改善 • 第 1 页</text>
+  </svg>

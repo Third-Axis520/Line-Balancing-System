@@ -1,0 +1,6 @@
+{
+  "name": "生产线平衡改善案例系统",
+  "description": "生产线平衡改善案例系统，支持PPT案例在线浏览、图片预览与高速下载。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
