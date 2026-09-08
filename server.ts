@@ -12,6 +12,33 @@ export interface CreateAppOptions {
   uploadsDir?: string;
 }
 
+function defaultStorageOptions(): Required<CreateAppOptions> {
+  return {
+    dataDir: path.join(process.cwd(), "data"),
+    uploadsDir: path.join(process.cwd(), "uploads")
+  };
+}
+
+function initializeProductionStorage(options: Required<CreateAppOptions>) {
+  const pptsDir = path.join(options.uploadsDir, "ppts");
+  const previewsDir = path.join(options.uploadsDir, "previews");
+  const authFile = path.join(options.dataDir, "auth.json");
+
+  for (const dir of [options.dataDir, options.uploadsDir, pptsDir, previewsDir]) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  if (!fs.existsSync(authFile)) {
+    fs.writeFileSync(
+      authFile,
+      JSON.stringify({
+        username: "qihua",
+        passwordHash: crypto.createHash("sha256").update("qihua123").digest("hex")
+      }, null, 2)
+    );
+  }
+}
+
 export function createApp(options: CreateAppOptions = {}) {
   return createAppContext(options).app;
 }
@@ -26,13 +53,6 @@ const PPTS_DIR = path.join(UPLOADS_DIR, "ppts");
 const PREVIEWS_DIR = path.join(UPLOADS_DIR, "previews");
 const DB_FILE = path.join(DATA_DIR, "ppts.json");
 const AUTH_FILE = path.join(DATA_DIR, "auth.json");
-
-// Ensure directories exist
-for (const dir of [DATA_DIR, UPLOADS_DIR, PPTS_DIR, PREVIEWS_DIR]) {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-}
 
 // Default planner credentials
 let authConfig = {
@@ -49,15 +69,6 @@ if (fs.existsSync(AUTH_FILE)) {
   } catch (e) {
     console.error("Failed to read auth.json:", e);
   }
-} else {
-  fs.writeFileSync(
-    AUTH_FILE,
-    JSON.stringify(
-      { username: authConfig.username, passwordHash: authConfig.passwordHash },
-      null,
-      2
-    )
-  );
 }
 
 // Multer storage for PPT files
@@ -1053,7 +1064,9 @@ app.delete("/api/ppts/:id", requirePlanner, (req, res) => {
 // ---------------- Production & Vite Dev Middleware ----------------
 
 async function startServer() {
-  const { app, generateSeedDataIfEmpty, ensureSlidesParsed } = createAppContext({});
+  const storageOptions = defaultStorageOptions();
+  initializeProductionStorage(storageOptions);
+  const { app, generateSeedDataIfEmpty, ensureSlidesParsed } = createAppContext(storageOptions);
   await generateSeedDataIfEmpty();
   await ensureSlidesParsed();
 
