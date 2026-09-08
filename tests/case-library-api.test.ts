@@ -27,24 +27,46 @@ test("case-library API serves isolated case data over HTTP", async (t) => {
   await mkdir(uploadsDir, { recursive: true });
   await writeFile(
     path.join(dataDir, "ppts.json"),
-    JSON.stringify([{
-      id: "case-1",
-      title: "Line balancing case",
-      originalFileName: "case-1.pptx",
-      storedFileName: "case-1.pptx",
-      fileSize: 1,
-      fileUrl: "/api/ppts/case-1/download",
-      category: "Line balancing",
-      version: "v1",
-      uploader: "Planner",
-      uploadDate: "2026-09-08 00:00",
-      updateDate: "2026-09-08 00:00",
-      description: "An isolated test case",
-      imageCount: 0,
-      images: [],
-      downloadCount: 2,
-      tags: []
-    }]),
+    JSON.stringify([
+      {
+        id: "case-1",
+        title: "Assembly balance improvement",
+        originalFileName: "case-1.pptx",
+        storedFileName: "case-1.pptx",
+        fileSize: 1,
+        fileUrl: "/api/ppts/case-1/download",
+        category: "Capacity planning",
+        version: "v1",
+        uploader: "Morgan Planner",
+        uploadDate: "2026-09-08 00:00",
+        updateDate: "2026-09-08 00:00",
+        description: "Ergonomic audit findings",
+        imageCount: 0,
+        images: [],
+        downloadCount: 2,
+        targetDepartment: "Welding operations",
+        tags: ["Kaizen workshop"]
+      },
+      {
+        id: "case-2",
+        title: "Packaging flow redesign",
+        originalFileName: "case-2.pptx",
+        storedFileName: "case-2.pptx",
+        fileSize: 2,
+        fileUrl: "/api/ppts/case-2/download",
+        category: "Material handling",
+        version: "v2",
+        uploader: "Taylor Coordinator",
+        uploadDate: "2026-09-07 00:00",
+        updateDate: "2026-09-07 00:00",
+        description: "Cart routing proposal",
+        imageCount: 0,
+        images: [],
+        downloadCount: 1,
+        targetDepartment: "Packing operations",
+        tags: ["Logistics review"]
+      }
+    ]),
     "utf8"
   );
 
@@ -64,9 +86,41 @@ test("case-library API serves isolated case data over HTTP", async (t) => {
   const ppts = await fetch(`${baseUrl}/api/ppts`);
   assert.equal(ppts.status, 200);
   const cases = await ppts.json();
-  assert.equal(cases.length, 1);
+  assert.equal(cases.length, 2);
   assert.equal(cases[0].id, "case-1");
   assert.equal(cases[0].downloadCount, 2);
+
+  const searchByTitle = await fetch(
+    `${baseUrl}/api/ppts?search=${encodeURIComponent("balance")}`
+  );
+  assert.equal(searchByTitle.status, 200);
+  assert.deepEqual(
+    (await searchByTitle.json()).map((item: { id: string }) => item.id),
+    ["case-1"]
+  );
+
+  const caseInsensitiveSearch = await fetch(
+    `${baseUrl}/api/ppts?search=${encodeURIComponent("ASSEMBLY")}`
+  );
+  assert.equal(caseInsensitiveSearch.status, 200);
+  assert.deepEqual(
+    (await caseInsensitiveSearch.json()).map((item: { id: string }) => item.id),
+    ["case-1"]
+  );
+
+  for (const term of [
+    "Ergonomic audit",
+    "Capacity planning",
+    "Kaizen workshop",
+    "Morgan Planner",
+    "Welding operations"
+  ]) {
+    const response = await fetch(
+      `${baseUrl}/api/ppts?search=${encodeURIComponent(term)}`
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), [], `${term} must not match outside the title`);
+  }
 
   const downloadCount = await fetch(`${baseUrl}/api/ppts/case-1/download-count`, {
     method: "POST"
