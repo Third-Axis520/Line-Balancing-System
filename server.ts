@@ -7,12 +7,21 @@ import crypto from "crypto";
 import { execSync } from "child_process";
 import { createServer as createViteServer } from "vite";
 
+export interface CreateAppOptions {
+  dataDir?: string;
+  uploadsDir?: string;
+}
+
+export function createApp(options: CreateAppOptions = {}) {
+  return createAppContext(options).app;
+}
+
+function createAppContext(options: CreateAppOptions) {
 const app = express();
-const PORT = 3000;
 
 // Directories
-const DATA_DIR = path.join(process.cwd(), "data");
-const UPLOADS_DIR = path.join(process.cwd(), "uploads");
+const DATA_DIR = options.dataDir ?? path.join(process.cwd(), "data");
+const UPLOADS_DIR = options.uploadsDir ?? path.join(process.cwd(), "uploads");
 const PPTS_DIR = path.join(UPLOADS_DIR, "ppts");
 const PREVIEWS_DIR = path.join(UPLOADS_DIR, "previews");
 const DB_FILE = path.join(DATA_DIR, "ppts.json");
@@ -1038,9 +1047,13 @@ app.delete("/api/ppts/:id", requirePlanner, (req, res) => {
   res.json({ success: true, message: `PPT《${removed.title}》已成功删除` });
 });
 
+  return { app, ensureSlidesParsed, generateSeedDataIfEmpty };
+}
+
 // ---------------- Production & Vite Dev Middleware ----------------
 
 async function startServer() {
+  const { app, generateSeedDataIfEmpty, ensureSlidesParsed } = createAppContext({});
   await generateSeedDataIfEmpty();
   await ensureSlidesParsed();
 
@@ -1058,11 +1071,15 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  app.listen(3000, "0.0.0.0", () => {
+    console.log("Server running on http://localhost:3000");
   });
 }
 
-startServer().catch((err) => {
-  console.error("Failed to start server:", err);
-});
+const isServerEntrypoint = process.argv[1] && ["server.ts", "server.cjs"].includes(path.basename(process.argv[1]));
+
+if (isServerEntrypoint) {
+  startServer().catch((err) => {
+    console.error("Failed to start server:", err);
+  });
+}
