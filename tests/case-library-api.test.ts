@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -67,4 +67,18 @@ test("case-library API serves isolated case data over HTTP", async (t) => {
   assert.equal(cases.length, 1);
   assert.equal(cases[0].id, "case-1");
   assert.equal(cases[0].downloadCount, 2);
+
+  const downloadCount = await fetch(`${baseUrl}/api/ppts/case-1/download-count`, {
+    method: "POST"
+  });
+  assert.equal(downloadCount.status, 200);
+  assert.equal((await downloadCount.json()).downloadCount, 3);
+
+  const persistedCases: { id: string; downloadCount: number }[] = JSON.parse(
+    await readFile(path.join(dataDir, "ppts.json"), "utf8")
+  );
+  assert.equal(
+    persistedCases.find((ppt) => ppt.id === "case-1")?.downloadCount,
+    3
+  );
 });
