@@ -5,25 +5,55 @@ import multer from "multer";
 import JSZip from "jszip";
 import crypto from "crypto";
 import { execSync } from "child_process";
+import { pathToFileURL } from "url";
 import { createServer as createViteServer } from "vite";
 
+export interface CreateAppOptions {
+  dataDir?: string;
+  uploadsDir?: string;
+}
+
+function defaultStorageOptions(): Required<CreateAppOptions> {
+  return {
+    dataDir: path.join(process.cwd(), "data"),
+    uploadsDir: path.join(process.cwd(), "uploads")
+  };
+}
+
+function initializeProductionStorage(options: Required<CreateAppOptions>) {
+  const pptsDir = path.join(options.uploadsDir, "ppts");
+  const previewsDir = path.join(options.uploadsDir, "previews");
+  const authFile = path.join(options.dataDir, "auth.json");
+
+  for (const dir of [options.dataDir, options.uploadsDir, pptsDir, previewsDir]) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  if (!fs.existsSync(authFile)) {
+    fs.writeFileSync(
+      authFile,
+      JSON.stringify({
+        username: "qihua",
+        passwordHash: crypto.createHash("sha256").update("qihua123").digest("hex")
+      }, null, 2)
+    );
+  }
+}
+
+export function createApp(options: CreateAppOptions = {}) {
+  return createAppContext(options).app;
+}
+
+function createAppContext(options: CreateAppOptions) {
 const app = express();
-const PORT = 3000;
 
 // Directories
-const DATA_DIR = path.join(process.cwd(), "data");
-const UPLOADS_DIR = path.join(process.cwd(), "uploads");
+const DATA_DIR = options.dataDir ?? path.join(process.cwd(), "data");
+const UPLOADS_DIR = options.uploadsDir ?? path.join(process.cwd(), "uploads");
 const PPTS_DIR = path.join(UPLOADS_DIR, "ppts");
 const PREVIEWS_DIR = path.join(UPLOADS_DIR, "previews");
 const DB_FILE = path.join(DATA_DIR, "ppts.json");
 const AUTH_FILE = path.join(DATA_DIR, "auth.json");
-
-// Ensure directories exist
-for (const dir of [DATA_DIR, UPLOADS_DIR, PPTS_DIR, PREVIEWS_DIR]) {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-}
 
 // Default planner credentials
 let authConfig = {
@@ -40,15 +70,6 @@ if (fs.existsSync(AUTH_FILE)) {
   } catch (e) {
     console.error("Failed to read auth.json:", e);
   }
-} else {
-  fs.writeFileSync(
-    AUTH_FILE,
-    JSON.stringify(
-      { username: authConfig.username, passwordHash: authConfig.passwordHash },
-      null,
-      2
-    )
-  );
 }
 
 // Multer storage for PPT files
@@ -1038,9 +1059,15 @@ app.delete("/api/ppts/:id", requirePlanner, (req, res) => {
   res.json({ success: true, message: `PPT《${removed.title}》已成功删除` });
 });
 
+  return { app, ensureSlidesParsed, generateSeedDataIfEmpty };
+}
+
 // ---------------- Production & Vite Dev Middleware ----------------
 
 async function startServer() {
+  const storageOptions = defaultStorageOptions();
+  initializeProductionStorage(storageOptions);
+  const { app, generateSeedDataIfEmpty, ensureSlidesParsed } = createAppContext(storageOptions);
   await generateSeedDataIfEmpty();
   await ensureSlidesParsed();
 
@@ -1058,11 +1085,19 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  app.listen(3000, "0.0.0.0", () => {
+    console.log("Server running on http://localhost:3000");
   });
 }
 
-startServer().catch((err) => {
-  console.error("Failed to start server:", err);
-});
+const isEsmEntrypoint = process.argv[1] !== undefined
+  && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+const isCommonJsEntrypoint = typeof require !== "undefined"
+  && typeof module !== "undefined"
+  && require.main === module;
+
+if (isEsmEntrypoint || isCommonJsEntrypoint) {
+  startServer().catch((err) => {
+    console.error("Failed to start server:", err);
+  });
+}
