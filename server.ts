@@ -5,6 +5,7 @@ import multer from "multer";
 import JSZip from "jszip";
 import crypto from "crypto";
 import { execSync } from "child_process";
+import { pathToFileURL } from "url";
 import { createServer as createViteServer } from "vite";
 
 export interface CreateAppOptions {
@@ -1089,9 +1090,13 @@ async function startServer() {
   });
 }
 
-const isServerEntrypoint = process.argv[1] && ["server.ts", "server.cjs"].includes(path.basename(process.argv[1]));
+const isEsmEntrypoint = process.argv[1] !== undefined
+  && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+const isCommonJsEntrypoint = typeof require !== "undefined"
+  && typeof module !== "undefined"
+  && require.main === module;
 
-if (isServerEntrypoint) {
+if (isEsmEntrypoint || isCommonJsEntrypoint) {
   startServer().catch((err) => {
     console.error("Failed to start server:", err);
   });
