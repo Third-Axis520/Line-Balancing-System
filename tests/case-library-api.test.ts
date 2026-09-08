@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -80,5 +80,73 @@ test("case-library API serves isolated case data over HTTP", async (t) => {
   assert.equal(
     persistedCases.find((ppt) => ppt.id === "case-1")?.downloadCount,
     3
+  );
+});
+
+test("authenticated upload lazily creates isolated storage", async (t) => {
+  const tempDir = await mkdtemp(path.join(tmpdir(), "case-library-upload-"));
+  const dataDir = path.join(tempDir, "data");
+  const uploadsDir = path.join(tempDir, "uploads");
+  let server: Server | undefined;
+
+  t.after(async () => {
+    await new Promise<void>((resolve, reject) => {
+      if (!server?.listening) {
+        resolve();
+        return;
+      }
+      server.close((error) => error ? reject(error) : resolve());
+    });
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  server = createServer(createApp({ dataDir, uploadsDir }));
+  await assert.rejects(access(dataDir));
+  await assert.rejects(access(uploadsDir));
+
+  await new Promise<void>((resolve, reject) => {
+    server!.once("error", reject);
+    server!.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  const login = await fetch(`${baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "qihua", password: "qihua123" })
+  });
+  assert.equal(login.status, 200);
+  const { token } = await login.json() as { token: string };
+  assert.ok(token);
+
+  const pptBytes = Buffer.from("minimal legacy ppt fixture");
+  const form = new FormData();
+  form.set("title", "Uploaded isolated case");
+  form.set("file", new Blob([pptBytes], { type: "application/vnd.ms-powerpoint" }), "isolated-case.ppt");
+
+  const upload = await fetch(`${baseUrl}/api/ppts`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}` },
+    body: form
+  });
+  const uploadBody = await upload.text();
+  assert.equal(upload.status, 200, uploadBody);
+  const result = JSON.parse(uploadBody) as {
+    success: boolean;
+    ppt: { id: string; storedFileName: string; title: string };
+  };
+  assert.equal(result.success, true);
+  assert.equal(result.ppt.title, "Uploaded isolated case");
+
+  const persistedCases: { id: string; storedFileName: string }[] = JSON.parse(
+    await readFile(path.join(dataDir, "ppts.json"), "utf8")
+  );
+  assert.equal(persistedCases[0]?.id, result.ppt.id);
+  assert.equal(persistedCases[0]?.storedFileName, result.ppt.storedFileName);
+  assert.deepEqual(
+    await readFile(path.join(uploadsDir, "ppts", result.ppt.storedFileName)),
+    pptBytes
   );
 });

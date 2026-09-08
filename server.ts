@@ -75,7 +75,12 @@ if (fs.existsSync(AUTH_FILE)) {
 // Multer storage for PPT files
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, PPTS_DIR);
+    try {
+      fs.mkdirSync(PPTS_DIR, { recursive: true });
+      cb(null, PPTS_DIR);
+    } catch (error) {
+      cb(error as Error, PPTS_DIR);
+    }
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
@@ -146,6 +151,7 @@ function getPPTs(): StoredPPT[] {
 }
 
 function savePPTs(items: StoredPPT[]) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(DB_FILE, JSON.stringify(items, null, 2), "utf-8");
 }
 
