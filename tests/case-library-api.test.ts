@@ -204,3 +204,90 @@ test("authenticated upload lazily creates isolated storage", async (t) => {
     pptBytes
   );
 });
+
+test("password change lazily persists isolated auth for a fresh app", async (t) => {
+  const tempDir = await mkdtemp(path.join(tmpdir(), "case-library-auth-"));
+  const dataDir = path.join(tempDir, "data");
+  const uploadsDir = path.join(tempDir, "uploads");
+  const servers: Server[] = [];
+
+  t.after(async () => {
+    for (const server of servers) {
+      await new Promise<void>((resolve, reject) => {
+        if (!server.listening) {
+          resolve();
+          return;
+        }
+        server.close((error) => error ? reject(error) : resolve());
+      });
+    }
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  const startApp = async () => {
+    const server = createServer(createApp({ dataDir, uploadsDir }));
+    servers.push(server);
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    return { server, baseUrl: `http://127.0.0.1:${address.port}` };
+  };
+
+  const firstApp = await startApp();
+  await assert.rejects(access(dataDir));
+  await assert.rejects(access(uploadsDir));
+
+  const login = await fetch(`${firstApp.baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "qihua", password: "qihua123" })
+  });
+  assert.equal(login.status, 200);
+  const { token } = await login.json() as { token: string };
+
+  const changePassword = await fetch(`${firstApp.baseUrl}/api/auth/change-password`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      oldPassword: "qihua123",
+      newPassword: "isolated-new-password"
+    })
+  });
+  const changePasswordBody = await changePassword.text();
+  assert.equal(changePassword.status, 200, changePasswordBody);
+  assert.equal(JSON.parse(changePasswordBody).success, true);
+
+  assert.deepEqual(
+    JSON.parse(await readFile(path.join(dataDir, "auth.json"), "utf8")),
+    {
+      username: "qihua",
+      passwordHash: "14fec77aaa48f0bafcb85e4b20ee8ac6ccc99d64334acc343809a41855a771df"
+    }
+  );
+  await assert.rejects(access(uploadsDir));
+
+  await new Promise<void>((resolve, reject) => {
+    firstApp.server.close((error) => error ? reject(error) : resolve());
+  });
+
+  const freshApp = await startApp();
+  const oldPasswordLogin = await fetch(`${freshApp.baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "qihua", password: "qihua123" })
+  });
+  assert.equal(oldPasswordLogin.status, 401);
+
+  const newPasswordLogin = await fetch(`${freshApp.baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "qihua", password: "isolated-new-password" })
+  });
+  assert.equal(newPasswordLogin.status, 200);
+});

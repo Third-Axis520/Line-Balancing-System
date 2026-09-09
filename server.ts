@@ -780,11 +780,12 @@ app.post("/api/auth/change-password", requirePlanner, (req, res) => {
     return res.status(400).json({ error: "新密码长度至少4位" });
   }
   const newHash = crypto.createHash("sha256").update(newPassword).digest("hex");
-  authConfig.passwordHash = newHash;
+  fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(
     AUTH_FILE,
     JSON.stringify({ username: authConfig.username, passwordHash: newHash }, null, 2)
   );
+  authConfig.passwordHash = newHash;
   res.json({ success: true, message: "密码修改成功" });
 });
 
