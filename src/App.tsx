@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Search, 
   RefreshCw, 
@@ -21,6 +21,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOption, setSortOption] = useState<'default' | 'downloads' | 'size' | 'images'>('default');
+  const fetchRequestId = useRef(0);
 
   // Auth State
   const [auth, setAuth] = useState<AuthState>({
@@ -79,10 +80,18 @@ export default function App() {
   }, []);
 
   // Fetch PPTs
-  const fetchPPTs = async () => {
+  const fetchPPTs = async (query = searchQuery) => {
+    const requestId = ++fetchRequestId.current;
     setIsLoading(true);
     try {
-      const res = await fetch('/api/ppts');
+      const trimmedQuery = query.trim();
+      const params = new URLSearchParams();
+      if (trimmedQuery) {
+        params.set('search', trimmedQuery);
+      }
+      const url = trimmedQuery ? `/api/ppts?${params.toString()}` : '/api/ppts';
+      const res = await fetch(url);
+      if (requestId !== fetchRequestId.current) return;
       if (res.ok) {
         const data = await res.json();
         setPpts(data);
@@ -90,14 +99,18 @@ export default function App() {
         addToast('error', '加载 PPT 列表失败');
       }
     } catch {
-      addToast('error', '网络连接失败，无法获取物料数据');
+      if (requestId === fetchRequestId.current) {
+        addToast('error', '网络连接失败，无法获取物料数据');
+      }
     } finally {
-      setIsLoading(false);
+      if (requestId === fetchRequestId.current) {
+        setIsLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    fetchPPTs();
+    void fetchPPTs();
   }, []);
 
   // Login Handler
@@ -183,18 +196,9 @@ export default function App() {
     }
   };
 
-  // Filter and Sort PPTs
-  const filteredPPTs = useMemo(() => {
+  // Sort PPTs
+  const sortedPPTs = useMemo(() => {
     let list = [...ppts];
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      list = list.filter(
-        (p) =>
-          p.title.toLowerCase().includes(q) ||
-          (p.description && p.description.toLowerCase().includes(q))
-      );
-    }
 
     const parseUploadTime = (dateStr?: string): number => {
       if (!dateStr) return 0;
@@ -220,7 +224,7 @@ export default function App() {
     }
 
     return list;
-  }, [ppts, searchQuery, sortOption]);
+  }, [ppts, sortOption]);
 
   return (
     <div className="min-h-screen bg-[#0b0f17] text-slate-100 flex flex-col selection:bg-orange-500 selection:text-white">
@@ -244,13 +248,20 @@ export default function App() {
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                const query = e.target.value;
+                setSearchQuery(query);
+                void fetchPPTs(query);
+              }}
               placeholder="搜索改善案例课件标题、说明..."
               className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-100 text-xs sm:text-sm placeholder:text-slate-500 focus:outline-none focus:border-orange-500 transition-colors"
             />
             {searchQuery && (
               <button
-                onClick={() => setSearchQuery('')}
+                onClick={() => {
+                  setSearchQuery('');
+                  void fetchPPTs('');
+                }}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-200"
               >
                 清空
@@ -276,7 +287,7 @@ export default function App() {
             </div>
 
             <button
-              onClick={fetchPPTs}
+              onClick={() => void fetchPPTs()}
               className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white transition-colors"
               title="刷新列表"
             >
@@ -291,9 +302,9 @@ export default function App() {
             <RefreshCw className="w-8 h-8 text-orange-500 animate-spin mx-auto" />
             <p className="text-sm text-slate-400">正在获取现场 PPT 演示文稿物料...</p>
           </div>
-        ) : filteredPPTs.length > 0 ? (
+        ) : sortedPPTs.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filteredPPTs.map((ppt) => (
+            {sortedPPTs.map((ppt) => (
               <PPTCard
                 key={ppt.id}
                 ppt={ppt}
@@ -315,7 +326,10 @@ export default function App() {
             </p>
             {searchQuery && (
               <button
-                onClick={() => setSearchQuery('')}
+                onClick={() => {
+                  setSearchQuery('');
+                  void fetchPPTs('');
+                }}
                 className="mt-2 text-xs text-orange-400 hover:text-orange-300 underline font-medium"
               >
                 清空搜索关键词
@@ -375,7 +389,7 @@ export default function App() {
           onClose={() => setIsUploadModalOpen(false)}
           onSuccess={(msg) => {
             addToast('success', msg);
-            fetchPPTs();
+            void fetchPPTs();
           }}
           token={auth.token}
         />
