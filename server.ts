@@ -75,7 +75,12 @@ if (fs.existsSync(AUTH_FILE)) {
 // Multer storage for PPT files
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, PPTS_DIR);
+    try {
+      fs.mkdirSync(PPTS_DIR, { recursive: true });
+      cb(null, PPTS_DIR);
+    } catch (error) {
+      cb(error as Error, PPTS_DIR);
+    }
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
@@ -146,6 +151,7 @@ function getPPTs(): StoredPPT[] {
 }
 
 function savePPTs(items: StoredPPT[]) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(DB_FILE, JSON.stringify(items, null, 2), "utf-8");
 }
 
@@ -774,11 +780,12 @@ app.post("/api/auth/change-password", requirePlanner, (req, res) => {
     return res.status(400).json({ error: "新密码长度至少4位" });
   }
   const newHash = crypto.createHash("sha256").update(newPassword).digest("hex");
-  authConfig.passwordHash = newHash;
+  fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(
     AUTH_FILE,
     JSON.stringify({ username: authConfig.username, passwordHash: newHash }, null, 2)
   );
+  authConfig.passwordHash = newHash;
   res.json({ success: true, message: "密码修改成功" });
 });
 
@@ -798,14 +805,7 @@ app.get("/api/ppts", (req, res) => {
 
   if (search && search.trim()) {
     const kw = search.trim().toLowerCase();
-    list = list.filter(
-      (p) =>
-        p.title.toLowerCase().includes(kw) ||
-        p.description.toLowerCase().includes(kw) ||
-        (p.uploader && p.uploader.toLowerCase().includes(kw)) ||
-        (p.tags && p.tags.some((t) => t.toLowerCase().includes(kw))) ||
-        (p.targetDepartment && p.targetDepartment.toLowerCase().includes(kw))
-    );
+    list = list.filter((p) => p.title.toLowerCase().includes(kw));
   }
 
   const parseUploadTime = (dateStr?: string): number => {
