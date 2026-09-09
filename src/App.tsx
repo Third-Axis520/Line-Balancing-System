@@ -19,6 +19,7 @@ import { ToastContainer, ToastMessage } from './components/Toast';
 export default function App() {
   const [ppts, setPpts] = useState<PPTItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [pptFetchError, setPptFetchError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOption, setSortOption] = useState<'default' | 'downloads' | 'size' | 'images'>('default');
   const fetchRequestId = useRef(0);
@@ -83,6 +84,7 @@ export default function App() {
   const fetchPPTs = async (query = searchQuery) => {
     const requestId = ++fetchRequestId.current;
     setIsLoading(true);
+    setPptFetchError(null);
     try {
       const trimmedQuery = query.trim();
       const params = new URLSearchParams();
@@ -94,13 +96,19 @@ export default function App() {
       if (requestId !== fetchRequestId.current) return;
       if (res.ok) {
         const data = await res.json();
+        if (requestId !== fetchRequestId.current) return;
+        setPptFetchError(null);
         setPpts(data);
       } else {
-        addToast('error', '加载 PPT 列表失败');
+        const message = '加载 PPT 列表失败';
+        setPptFetchError(message);
+        addToast('error', message);
       }
     } catch {
       if (requestId === fetchRequestId.current) {
-        addToast('error', '网络连接失败，无法获取物料数据');
+        const message = '网络连接失败，无法获取物料数据';
+        setPptFetchError(message);
+        addToast('error', message);
       }
     } finally {
       if (requestId === fetchRequestId.current) {
@@ -302,6 +310,18 @@ export default function App() {
             <RefreshCw className="w-8 h-8 text-orange-500 animate-spin mx-auto" />
             <p className="text-sm text-slate-400">正在获取现场 PPT 演示文稿物料...</p>
           </div>
+        ) : pptFetchError ? (
+          <div className="py-16 text-center rounded-2xl bg-slate-900/50 border border-slate-800/80 p-8 space-y-3">
+            <FolderOpen className="w-12 h-12 text-slate-600 mx-auto" />
+            <h3 className="text-base font-bold text-slate-300">无法加载 PPT 演示文稿</h3>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto">{pptFetchError}</p>
+            <button
+              onClick={() => void fetchPPTs()}
+              className="mt-2 text-xs text-orange-400 hover:text-orange-300 underline font-medium"
+            >
+              重新加载
+            </button>
+          </div>
         ) : sortedPPTs.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {sortedPPTs.map((ppt) => (
@@ -399,9 +419,9 @@ export default function App() {
         <EditModal
           ppt={selectedPPTForEdit}
           onClose={() => setSelectedPPTForEdit(null)}
-          onSuccess={(updated, msg) => {
+          onSuccess={(_updated, msg) => {
             addToast('success', msg);
-            setPpts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+            void fetchPPTs();
           }}
           token={auth.token}
         />
