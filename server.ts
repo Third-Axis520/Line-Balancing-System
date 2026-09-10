@@ -712,8 +712,43 @@ function appRole(identity: EntraIdentity): "admin" | "planner" | "reader" {
   return isListed(roleConfig.planners, identity) ? "planner" : "reader";
 }
 
-function saveRoles() {
-  fs.writeFileSync(AUTH_FILE, JSON.stringify(roleConfig, null, 2));
+const ROLE_LOCK_RETRIES = 25;
+const ROLE_LOCK_RETRY_MS = 20;
+
+function pause(ms: number) {
+  return new Promise<void>(resolve => setTimeout(resolve, ms));
+}
+
+async function mutateRoleConfig(mutator: (current: RoleConfig) => RoleConfig): Promise<RoleConfig> {
+  const lockFile = `${AUTH_FILE}.lock`;
+  let lock: fs.promises.FileHandle | undefined;
+  let temporaryFile: string | undefined;
+  try {
+    for (let attempt = 0; attempt < ROLE_LOCK_RETRIES; attempt++) {
+      try {
+        lock = await fs.promises.open(lockFile, "wx");
+        break;
+      } catch (error) {
+        if (!(error && typeof error === "object" && (error as NodeJS.ErrnoException).code === "EEXIST")) throw error;
+        await pause(ROLE_LOCK_RETRY_MS);
+      }
+    }
+    if (!lock) throw new AuthFailure(503, "ROLE_UPDATE_UNAVAILABLE", "Role configuration is temporarily unavailable.");
+    const next = mutator(loadRoleConfig());
+    temporaryFile = `${AUTH_FILE}.${process.pid}.${Date.now()}.tmp`;
+    await fs.promises.writeFile(temporaryFile, JSON.stringify(next, null, 2), "utf-8");
+    await fs.promises.rename(temporaryFile, AUTH_FILE);
+    temporaryFile = undefined;
+    roleConfig = next;
+    return next;
+  } catch (error) {
+    if (error instanceof AuthFailure) throw error;
+    throw new AuthFailure(503, "ROLE_UPDATE_UNAVAILABLE", "Role configuration is temporarily unavailable.");
+  } finally {
+    if (temporaryFile) await fs.promises.unlink(temporaryFile).catch(() => undefined);
+    if (lock) await lock.close().catch(() => undefined);
+    if (lock) await fs.promises.unlink(lockFile).catch(() => undefined);
+  }
 }
 
 function canonicalOid(value: unknown): string | undefined {
@@ -824,12 +859,10 @@ app.put("/api/admin/planners", async (req, res) => {
     await requireEligibleAdmin(req);
     const oid = canonicalOid(req.body?.oid);
     if (!oid) return res.status(400).json({ code: "INVALID_REQUEST", message: "oid must be a canonical UUID v4." });
-    roleConfig = loadRoleConfig();
-    if (!roleConfig.planners.includes(oid)) {
-      roleConfig = { ...roleConfig, planners: [...roleConfig.planners, oid] };
-      saveRoles();
-    }
-    res.json({ planners: roleConfig.planners });
+    const next = await mutateRoleConfig(current => current.planners.includes(oid)
+      ? current
+      : { ...current, planners: [...current.planners, oid] });
+    res.json({ planners: next.planners });
   } catch (error) {
     if (error instanceof AuthFailure) return sendAuthFailure(res, error);
     return sendAuthFailure(res, new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable."));
@@ -841,10 +874,8 @@ app.delete("/api/admin/planners/:oid", async (req, res) => {
     await requireEligibleAdmin(req);
     const oid = canonicalOid(req.params.oid);
     if (!oid) return res.status(400).json({ code: "INVALID_REQUEST", message: "oid must be a canonical UUID v4." });
-    roleConfig = loadRoleConfig();
-    roleConfig = { ...roleConfig, planners: roleConfig.planners.filter(value => value !== oid) };
-    saveRoles();
-    res.json({ planners: roleConfig.planners });
+    const next = await mutateRoleConfig(current => ({ ...current, planners: current.planners.filter(value => value !== oid) }));
+    res.json({ planners: next.planners });
   } catch (error) {
     if (error instanceof AuthFailure) return sendAuthFailure(res, error);
     return sendAuthFailure(res, new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable."));

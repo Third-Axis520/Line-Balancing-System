@@ -121,6 +121,20 @@ test("eligible admins can grant and revoke planner OID roles immediately", async
   } finally { await fixture.close(); }
 });
 
+test("planner role mutation returns a safe failure while another process holds the auth lock", async () => {
+  const fixture = await startMaintenanceApp({ admins: [plannerIdentity.oid], planners: [] });
+  try {
+    await writeFile(path.join(fixture.root, "data", "auth.json.lock"), "external process");
+    const response = await fixture.request("/api/admin/planners", {
+      method: "PUT",
+      headers: { authorization: "Bearer valid", "content-type": "application/json" },
+      body: JSON.stringify({ oid: "33333333-3333-4333-8333-333333333333" })
+    });
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { code: "ROLE_UPDATE_UNAVAILABLE", message: "Role configuration is temporarily unavailable." });
+  } finally { await fixture.close(); }
+});
+
 test("a successful upstream directory clear never restores stale local authorization data", async () => {
   let lookups = 0;
   const fixture = await startMaintenanceApp({
