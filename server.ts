@@ -7,12 +7,23 @@ import crypto from "crypto";
 import { execSync } from "child_process";
 import { createServer as createViteServer } from "vite";
 
+export interface CreateAppOptions {
+  dataDir?: string;
+  uploadsDir?: string;
+  auth?: unknown;
+}
+
+const appLifecycles = new WeakMap<express.Express, {
+  generateSeedDataIfEmpty: () => Promise<void>;
+  ensureSlidesParsed: () => Promise<void>;
+}>();
+
+export function createApp(options: CreateAppOptions = {}): express.Express {
 const app = express();
-const PORT = 3000;
 
 // Directories
-const DATA_DIR = path.join(process.cwd(), "data");
-const UPLOADS_DIR = path.join(process.cwd(), "uploads");
+const DATA_DIR = options.dataDir ?? path.join(process.cwd(), "data");
+const UPLOADS_DIR = options.uploadsDir ?? path.join(process.cwd(), "uploads");
 const PPTS_DIR = path.join(UPLOADS_DIR, "ppts");
 const PREVIEWS_DIR = path.join(UPLOADS_DIR, "previews");
 const DB_FILE = path.join(DATA_DIR, "ppts.json");
@@ -1038,11 +1049,21 @@ app.delete("/api/ppts/:id", requirePlanner, (req, res) => {
   res.json({ success: true, message: `PPT《${removed.title}》已成功删除` });
 });
 
+  appLifecycles.set(app, { generateSeedDataIfEmpty, ensureSlidesParsed });
+  return app;
+}
+
 // ---------------- Production & Vite Dev Middleware ----------------
 
-async function startServer() {
-  await generateSeedDataIfEmpty();
-  await ensureSlidesParsed();
+export async function startServer() {
+  const app = createApp({
+    dataDir: path.join(process.cwd(), "data"),
+    uploadsDir: path.join(process.cwd(), "uploads")
+  });
+  const lifecycle = appLifecycles.get(app);
+  if (!lifecycle) throw new Error("Server lifecycle was not initialized");
+  await lifecycle.generateSeedDataIfEmpty();
+  await lifecycle.ensureSlidesParsed();
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -1058,11 +1079,14 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  app.listen(3000, "0.0.0.0", () => {
+    console.log("Server running on http://localhost:3000");
   });
 }
 
-startServer().catch((err) => {
-  console.error("Failed to start server:", err);
-});
+const isDirectServerExecution = ["server.ts", "server.cjs"].includes(path.basename(process.argv[1] ?? ""));
+if (isDirectServerExecution) {
+  startServer().catch((err) => {
+    console.error("Failed to start server:", err);
+  });
+}
