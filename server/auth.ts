@@ -10,6 +10,7 @@ export interface DirectoryEmployee {
   id: string;
   name: string;
   mail: string;
+  department?: string;
   accountEnabled: boolean;
 }
 
@@ -34,7 +35,7 @@ function readString(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-export function createEntraAuth(env: NodeJS.ProcessEnv = process.env): AuthDependencies {
+export function createEntraAuth(env: NodeJS.ProcessEnv = process.env, options: { jwksUrl?: string } = {}): AuthDependencies {
   const allowedDepartments = (env.ALLOWED_DEPARTMENTS ?? "").split(",").map(item => item.trim()).filter(Boolean);
   let verifier: { tenantId: string; apiClientId: string; jwks: ReturnType<typeof createRemoteJWKSet> } | undefined;
   const getVerifier = () => {
@@ -45,7 +46,7 @@ export function createEntraAuth(env: NodeJS.ProcessEnv = process.env): AuthDepen
     if (!configuredScopes.some(scope => scope.split("/").at(-1) === "access_as_user")) {
       throw new AuthFailure(503, "AUTH_CONFIGURATION", "VITE_API_SCOPE must include access_as_user.");
     }
-    verifier = { tenantId, apiClientId, jwks: createRemoteJWKSet(new URL(`https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`)) };
+    verifier = { tenantId, apiClientId, jwks: createRemoteJWKSet(new URL(options.jwksUrl ?? `https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`)) };
     return verifier;
   };
 
@@ -64,9 +65,10 @@ export function createEntraAuth(env: NodeJS.ProcessEnv = process.env): AuthDepen
           throw new AuthFailure(403, "INSUFFICIENT_SCOPE", "The access_as_user scope is required.");
         }
         const oid = readString(payload.oid);
+        const tokenTenantId = readString(payload.tid);
         const preferredUsername = readString(payload.preferred_username);
         const name = readString(payload.name);
-        if (!oid || !preferredUsername || !name) {
+        if (!oid || !tokenTenantId || tokenTenantId !== tenantId || !preferredUsername || !name) {
           throw new AuthFailure(401, "UNAUTHORIZED", "The access token is missing required identity claims.");
         }
         return { oid, preferredUsername, name };
@@ -95,7 +97,8 @@ export function createEntraAuth(env: NodeJS.ProcessEnv = process.env): AuthDepen
           const id = readString(employee.id);
           const name = readString(employee.name);
           const mail = readString(employee.mail);
-          return id && name && mail && typeof employee.accountEnabled === "boolean" ? { id, name, mail, accountEnabled: employee.accountEnabled } : undefined;
+          const department = readString(employee.department);
+          return id && name && mail && typeof employee.accountEnabled === "boolean" ? { id, name, mail, department: department || undefined, accountEnabled: employee.accountEnabled } : undefined;
         }).filter((item): item is DirectoryEmployee => Boolean(item));
         return normalized.find(employee => employee.id === identity.oid)
           ?? normalized.find(employee => employee.mail.toLowerCase() === identity.preferredUsername.toLowerCase());

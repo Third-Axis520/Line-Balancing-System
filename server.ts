@@ -692,8 +692,7 @@ function sendAuthFailure(res: express.Response, failure: AuthFailure) {
 }
 
 function isListed(values: string[], identity: EntraIdentity) {
-  const candidates = [identity.oid, identity.preferredUsername.toLowerCase()];
-  return values.some(value => candidates.includes(value.toLowerCase()));
+  return values.some(value => value === identity.oid);
 }
 
 async function requirePlanner(req: express.Request, res: express.Response, next: express.NextFunction) {
@@ -717,7 +716,7 @@ async function requirePlanner(req: express.Request, res: express.Response, next:
     if (!employee.employee.accountEnabled) {
       throw new AuthFailure(403, "ACCOUNT_DISABLED", "The employee account is disabled.");
     }
-    const department = employee.employee.name.split("-", 1)[0].trim();
+    const department = employee.employee.department?.trim() || employee.employee.name.split("-", 1)[0].trim();
     const allowedDepartments = authDependencies.allowedDepartments ?? [];
     if (allowedDepartments.length > 0 && !allowedDepartments.includes(department)) {
       throw new AuthFailure(403, "DEPARTMENT_NOT_ALLOWED", "The employee department is not allowed.");

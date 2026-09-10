@@ -4,7 +4,9 @@ import { access, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { createApp } from "../server.js";
+import { createEntraAuth } from "../server/auth.js";
 
 const plannerIdentity = {
   oid: "employee-1",
@@ -14,7 +16,7 @@ const plannerIdentity = {
 
 async function startMaintenanceApp(options: {
   verify?: () => Promise<typeof plannerIdentity>;
-  lookupEmployee?: () => Promise<{ id: string; name: string; mail: string; accountEnabled: boolean } | undefined>;
+  lookupEmployee?: () => Promise<{ id: string; name: string; mail: string; department?: string; accountEnabled: boolean } | undefined>;
   admins?: string[];
   planners?: string[];
   allowedDepartments?: string[];
@@ -37,7 +39,7 @@ async function startMaintenanceApp(options: {
     uploadsDir,
     auth: {
       verifyAccessToken: options.verify ?? (async () => plannerIdentity),
-      lookupEmployee: options.lookupEmployee ?? (async () => ({ id: "employee-1", name: "Assembly - Planner", mail: "planner@example.com", accountEnabled: true })),
+      lookupEmployee: options.lookupEmployee ?? (async () => ({ id: "employee-1", name: "Assembly - Planner", mail: "planner@example.com", department: "Assembly", accountEnabled: true })),
       allowedDepartments: options.allowedDepartments ?? []
     }
   }));
@@ -87,6 +89,19 @@ test("case maintenance rejects a valid employee with no local role", async () =>
   } finally { await fixture.close(); }
 });
 
+test("local planner roles only match Entra object ids and directory department takes precedence", async () => {
+  const fixture = await startMaintenanceApp({
+    planners: [plannerIdentity.preferredUsername],
+    allowedDepartments: ["Assembly"],
+    lookupEmployee: async () => ({ id: "employee-1", name: "Other - Planner", mail: "planner@example.com", department: "Assembly", accountEnabled: true })
+  });
+  try {
+    const response = await fixture.request("/api/ppts/case-1", { method: "PUT", body: JSON.stringify({ title: "Updated" }), headers: { authorization: "Bearer valid", "content-type": "application/json" } });
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).code, "ROLE_NOT_ALLOWED");
+  } finally { await fixture.close(); }
+});
+
 test("case maintenance returns safe qualification failures", async () => {
   const cases = [
     { label: "missing scope", verify: async () => { throw Object.assign(new Error("scope"), { code: "INSUFFICIENT_SCOPE" }); }, lookupEmployee: undefined, departments: [], status: 403, code: "INSUFFICIENT_SCOPE" },
@@ -105,6 +120,49 @@ test("case maintenance returns safe qualification failures", async () => {
       assert.equal(typeof body.message, "string", item.label);
       assert.equal(JSON.stringify(body).includes("upstream secret"), false, item.label);
     } finally { await fixture.close(); }
+  }
+});
+
+test("Entra verifier validates signed v1/v2 tokens, tenant, audiences, and scope without external services", async () => {
+  const tenantId = "11111111-1111-1111-1111-111111111111";
+  const clientId = "22222222-2222-2222-2222-222222222222";
+  const { publicKey, privateKey } = await generateKeyPair("RS256");
+  const publicJwk = await exportJWK(publicKey);
+  publicJwk.kid = "local-test-key";
+  publicJwk.alg = "RS256";
+  const jwksServer = createServer((_request, response) => {
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ keys: [publicJwk] }));
+  });
+  await new Promise<void>((resolve, reject) => {
+    jwksServer.once("error", reject);
+    jwksServer.once("listening", resolve);
+    jwksServer.listen(0, "127.0.0.1");
+  });
+  const address = jwksServer.address();
+  assert.ok(address && typeof address !== "string");
+  const auth = createEntraAuth({
+    VITE_TENANT_ID: tenantId,
+    API_CLIENT_ID: clientId,
+    VITE_API_SCOPE: `api://${clientId}/access_as_user`,
+    EMPLOYEE_API_URL: "http://127.0.0.1/directory-not-used"
+  }, { jwksUrl: `http://127.0.0.1:${address.port}/keys` });
+  const token = async (issuer: string, audience: string, scope = "access_as_user", tokenTenantId: string | null = tenantId) => new SignJWT({
+    oid: "employee-1", ...(tokenTenantId === null ? {} : { tid: tokenTenantId }), preferred_username: "planner@example.com", name: "Assembly - Planner", scp: scope
+  }).setProtectedHeader({ alg: "RS256", kid: "local-test-key" }).setIssuer(issuer).setAudience(audience).setIssuedAt().setExpirationTime("5m").sign(privateKey);
+  try {
+    for (const [issuer, audience] of [
+      [`https://sts.windows.net/${tenantId}/`, clientId],
+      [`https://login.microsoftonline.com/${tenantId}/v2.0`, `api://${clientId}`]
+    ]) {
+      const identity = await auth.verifyAccessToken(await token(issuer, audience));
+      assert.equal(identity.oid, "employee-1");
+    }
+    await assert.rejects(() => token(`https://sts.windows.net/${tenantId}/`, clientId, "openid").then(auth.verifyAccessToken), { code: "INSUFFICIENT_SCOPE" });
+    await assert.rejects(() => token(`https://sts.windows.net/${tenantId}/`, clientId, "access_as_user", "wrong-tenant").then(auth.verifyAccessToken), { code: "UNAUTHORIZED" });
+    await assert.rejects(() => token(`https://sts.windows.net/${tenantId}/`, clientId, "access_as_user", null).then(auth.verifyAccessToken), { code: "UNAUTHORIZED" });
+  } finally {
+    await new Promise<void>((resolve, reject) => jwksServer.close(error => error ? reject(error) : resolve()));
   }
 });
 
