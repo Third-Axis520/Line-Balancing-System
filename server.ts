@@ -43,21 +43,24 @@ const employeeCacheTtlMs = (Number.isInteger(parsedEmployeeCacheTtlSeconds) && p
   : 3600) * 1000;
 const employeeCache = new Map<string, { employee: import("./server/auth.js").DirectoryEmployee; expiresAt: number; syncedAt: string }>();
 const directoryRefreshes = new Map<string, number>();
-let roleConfig: { admins: string[]; planners: string[] } = { admins: [], planners: [] };
-if (fs.existsSync(AUTH_FILE)) {
+type RoleConfig = { admins: string[]; planners: string[] };
+function loadRoleConfig(): RoleConfig {
+  if (!fs.existsSync(AUTH_FILE)) return { admins: [], planners: [] };
   try {
     const raw: unknown = JSON.parse(fs.readFileSync(AUTH_FILE, "utf-8"));
     if (raw && typeof raw === "object") {
       const config = raw as { admins?: unknown; planners?: unknown };
       if (Array.isArray(config.admins) && Array.isArray(config.planners)
         && config.admins.every(value => typeof value === "string") && config.planners.every(value => typeof value === "string")) {
-        roleConfig = { admins: config.admins, planners: config.planners };
+        return { admins: config.admins, planners: config.planners };
       }
     }
   } catch {
     console.error("Failed to read auth.json roles.");
   }
+  return { admins: [], planners: [] };
 }
+let roleConfig: RoleConfig = loadRoleConfig();
 
 // Multer storage for PPT files
 const storage = multer.diskStorage({
@@ -704,12 +707,19 @@ function bootstrapAdmins() {
 }
 
 function appRole(identity: EntraIdentity): "admin" | "planner" | "reader" {
+  roleConfig = loadRoleConfig();
   if (isListed(roleConfig.admins, identity) || bootstrapAdmins().includes(identity.preferredUsername.toLowerCase())) return "admin";
   return isListed(roleConfig.planners, identity) ? "planner" : "reader";
 }
 
 function saveRoles() {
   fs.writeFileSync(AUTH_FILE, JSON.stringify(roleConfig, null, 2));
+}
+
+function canonicalOid(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const oid = value.trim().toLowerCase();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(oid) ? oid : undefined;
 }
 
 async function requireIdentity(req: express.Request): Promise<EntraIdentity> {
@@ -812,8 +822,9 @@ app.get("/api/admin/planners", async (req, res) => {
 app.put("/api/admin/planners", async (req, res) => {
   try {
     await requireEligibleAdmin(req);
-    const oid = typeof req.body?.oid === "string" ? req.body.oid.trim() : "";
-    if (!oid) return res.status(400).json({ code: "INVALID_REQUEST", message: "oid is required." });
+    const oid = canonicalOid(req.body?.oid);
+    if (!oid) return res.status(400).json({ code: "INVALID_REQUEST", message: "oid must be a canonical UUID v4." });
+    roleConfig = loadRoleConfig();
     if (!roleConfig.planners.includes(oid)) {
       roleConfig = { ...roleConfig, planners: [...roleConfig.planners, oid] };
       saveRoles();
@@ -828,7 +839,9 @@ app.put("/api/admin/planners", async (req, res) => {
 app.delete("/api/admin/planners/:oid", async (req, res) => {
   try {
     await requireEligibleAdmin(req);
-    const oid = req.params.oid.trim();
+    const oid = canonicalOid(req.params.oid);
+    if (!oid) return res.status(400).json({ code: "INVALID_REQUEST", message: "oid must be a canonical UUID v4." });
+    roleConfig = loadRoleConfig();
     roleConfig = { ...roleConfig, planners: roleConfig.planners.filter(value => value !== oid) };
     saveRoles();
     res.json({ planners: roleConfig.planners });
@@ -845,16 +858,9 @@ app.post("/api/directory/refresh", async (req, res) => {
     if (Date.now() - previousRefresh < 60_000) throw new AuthFailure(429, "RATE_LIMITED", "Directory refresh is limited to once per minute.");
     directoryRefreshes.set(identity.oid, Date.now());
     if (!authDependencies.refreshDirectory) throw new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable.");
-    const prior = employeeCache.get(identity.oid);
     const refresh = await authDependencies.refreshDirectory();
     employeeCache.delete(identity.oid);
-    let entry: Awaited<ReturnType<typeof findEmployee>>;
-    try {
-      entry = await findEmployee(identity, true);
-    } catch (error) {
-      if (prior) employeeCache.set(identity.oid, prior);
-      throw error;
-    }
+    const entry = await findEmployee(identity, true);
     const directory = qualification(entry?.employee);
     res.json({ refreshed: true, syncedAt: refresh.syncedAt, recordCount: refresh.recordCount, me: { found: Boolean(entry), accountEnabled: entry?.employee.accountEnabled ?? false, department: directory.department } });
   } catch (error) {

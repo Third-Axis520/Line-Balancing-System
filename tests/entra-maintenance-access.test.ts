@@ -105,14 +105,37 @@ test("eligible admins can grant and revoke planner OID roles immediately", async
     const headers = { authorization: "Bearer valid", "content-type": "application/json" };
     const before = await fixture.request("/api/admin/planners", { headers });
     assert.deepEqual(await before.json(), { planners: [] });
-    const granted = await fixture.request("/api/admin/planners", { method: "PUT", headers, body: JSON.stringify({ oid: "employee-2" }) });
+    const plannerOid = "33333333-3333-4333-8333-333333333333";
+    const granted = await fixture.request("/api/admin/planners", { method: "PUT", headers, body: JSON.stringify({ oid: plannerOid }) });
     assert.equal(granted.status, 200);
-    assert.deepEqual(await granted.json(), { planners: ["employee-2"] });
+    assert.deepEqual(await granted.json(), { planners: [plannerOid] });
     const after = await fixture.request("/api/admin/planners", { headers });
-    assert.deepEqual(await after.json(), { planners: ["employee-2"] });
-    const revoked = await fixture.request("/api/admin/planners/employee-2", { method: "DELETE", headers });
+    assert.deepEqual(await after.json(), { planners: [plannerOid] });
+    const invalid = await fixture.request("/api/admin/planners", { method: "PUT", headers, body: JSON.stringify({ oid: "not-an-oid" }) });
+    assert.equal(invalid.status, 400);
+    const invalidPath = await fixture.request("/api/admin/planners/not-an-oid", { method: "DELETE", headers });
+    assert.equal(invalidPath.status, 400);
+    const revoked = await fixture.request(`/api/admin/planners/${plannerOid}`, { method: "DELETE", headers });
     assert.equal(revoked.status, 200);
     assert.deepEqual(await revoked.json(), { planners: [] });
+  } finally { await fixture.close(); }
+});
+
+test("a successful upstream directory clear never restores stale local authorization data", async () => {
+  let lookups = 0;
+  const fixture = await startMaintenanceApp({
+    lookupEmployee: async () => {
+      lookups++;
+      if (lookups === 1) return { id: "employee-1", name: "Assembly - Planner", mail: "planner@example.com", department: "Assembly", accountEnabled: true };
+      throw new Error("fresh directory read failed");
+    },
+    refreshDirectory: async () => ({ syncedAt: "2026-09-10T00:00:00.000Z", recordCount: 1 })
+  });
+  try {
+    const headers = { authorization: "Bearer valid" };
+    assert.equal((await fixture.request("/api/auth/me", { headers })).status, 200);
+    assert.equal((await fixture.request("/api/directory/refresh", { method: "POST", headers })).status, 503);
+    assert.equal((await fixture.request("/api/auth/me", { headers })).status, 503);
   } finally { await fixture.close(); }
 });
 
@@ -303,13 +326,30 @@ test("directory client clears the cache endpoint derived from the employee API b
   });
   const address = directory.address();
   assert.ok(address && typeof address !== "string");
-  const auth = createEntraAuth({ EMPLOYEE_API_URL: `http://127.0.0.1:${address.port}/employees/` });
+  const auth = createEntraAuth({ EMPLOYEE_API_URL: `http://127.0.0.1:${address.port}/employees/?department=Assembly` });
   try {
     assert.deepEqual(await auth.refreshDirectory!(), { syncedAt: "2026-09-10T00:00:00.000Z", recordCount: 7 });
     assert.equal(requestMethod, "DELETE");
-    assert.equal(requestPath, "/employees/cache");
+    assert.equal(requestPath, "/employees/cache?department=Assembly");
   } finally {
     await new Promise<void>((resolve, reject) => directory.close(error => error ? reject(error) : resolve()));
+  }
+});
+
+test("directory cache clearing uses the configured employee API timeout", async () => {
+  const hangingDirectory = createServer(() => undefined);
+  await new Promise<void>((resolve, reject) => {
+    hangingDirectory.once("error", reject);
+    hangingDirectory.once("listening", resolve);
+    hangingDirectory.listen(0, "127.0.0.1");
+  });
+  const address = hangingDirectory.address();
+  assert.ok(address && typeof address !== "string");
+  const auth = createEntraAuth({ EMPLOYEE_API_URL: `http://127.0.0.1:${address.port}/employees`, EMPLOYEE_API_TIMEOUT_MS: "20" });
+  try {
+    await assert.rejects(() => auth.refreshDirectory!(), { code: "DIRECTORY_UNAVAILABLE" });
+  } finally {
+    await new Promise<void>((resolve, reject) => hangingDirectory.close(error => error ? reject(error) : resolve()));
   }
 });
 

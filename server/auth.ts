@@ -36,6 +36,11 @@ function readString(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+function directoryTimeoutMs(env: NodeJS.ProcessEnv): number {
+  const parsedTimeoutMs = Number.parseInt(env.EMPLOYEE_API_TIMEOUT_MS ?? "", 10);
+  return Number.isInteger(parsedTimeoutMs) && parsedTimeoutMs > 0 ? parsedTimeoutMs : 10_000;
+}
+
 export function createEntraAuth(env: NodeJS.ProcessEnv = process.env, options: { jwksUrl?: string } = {}): AuthDependencies {
   const allowedDepartments = (env.ALLOWED_DEPARTMENTS ?? "").split(",").map(item => item.trim()).filter(Boolean);
   let verifier: { tenantId: string; apiClientId: string; jwks: ReturnType<typeof createRemoteJWKSet> } | undefined;
@@ -80,8 +85,7 @@ export function createEntraAuth(env: NodeJS.ProcessEnv = process.env, options: {
     },
     async lookupEmployee(identity) {
       const employeeApiUrl = required(env.EMPLOYEE_API_URL, "EMPLOYEE_API_URL");
-      const parsedTimeoutMs = Number.parseInt(env.EMPLOYEE_API_TIMEOUT_MS ?? "", 10);
-      const timeoutMs = Number.isInteger(parsedTimeoutMs) && parsedTimeoutMs > 0 ? parsedTimeoutMs : 10_000;
+      const timeoutMs = directoryTimeoutMs(env);
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
       try {
@@ -110,10 +114,17 @@ export function createEntraAuth(env: NodeJS.ProcessEnv = process.env, options: {
       }
     },
     async refreshDirectory() {
-      const employeeApiUrl = required(env.EMPLOYEE_API_URL, "EMPLOYEE_API_URL");
-      const cacheUrl = `${employeeApiUrl.replace(/\/+$/, "")}/cache`;
       try {
-        const response = await fetch(cacheUrl, { method: "DELETE" });
+        const cacheUrl = new URL(required(env.EMPLOYEE_API_URL, "EMPLOYEE_API_URL"));
+        cacheUrl.pathname = `${cacheUrl.pathname.replace(/\/+$/, "")}/cache`;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), directoryTimeoutMs(env));
+        let response: Response;
+        try {
+          response = await fetch(cacheUrl, { method: "DELETE", signal: controller.signal });
+        } finally {
+          clearTimeout(timeout);
+        }
         if (!response.ok) throw new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable.");
         const body: unknown = await response.json().catch(() => ({}));
         const result = body && typeof body === "object" ? body as Record<string, unknown> : {};
