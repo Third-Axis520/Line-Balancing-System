@@ -133,6 +133,30 @@ test("directory refresh authenticates but permits ineligible users, invalidates 
   } finally { await fixture.close(); }
 });
 
+test("directory refresh reserves the OID rate-limit window before upstream work, including failures", async () => {
+  let release!: () => void;
+  const upstreamStarted = new Promise<void>(resolve => { release = resolve; });
+  let begin!: () => void;
+  const started = new Promise<void>(resolve => { begin = resolve; });
+  const fixture = await startMaintenanceApp({
+    refreshDirectory: async () => {
+      begin();
+      await upstreamStarted;
+      throw new Error("directory unavailable");
+    }
+  });
+  try {
+    const first = fixture.request("/api/directory/refresh", { method: "POST", headers: { authorization: "Bearer valid" } });
+    await started;
+    const concurrent = await fixture.request("/api/directory/refresh", { method: "POST", headers: { authorization: "Bearer valid" } });
+    assert.equal(concurrent.status, 429);
+    release();
+    assert.equal((await first).status, 503);
+    const retry = await fixture.request("/api/directory/refresh", { method: "POST", headers: { authorization: "Bearer valid" } });
+    assert.equal(retry.status, 429);
+  } finally { await fixture.close(); }
+});
+
 test("case maintenance rejects a valid employee with no local role", async () => {
   const fixture = await startMaintenanceApp({ planners: [] });
   try {

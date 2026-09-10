@@ -843,6 +843,7 @@ app.post("/api/directory/refresh", async (req, res) => {
     const identity = await requireIdentity(req);
     const previousRefresh = directoryRefreshes.get(identity.oid) ?? 0;
     if (Date.now() - previousRefresh < 60_000) throw new AuthFailure(429, "RATE_LIMITED", "Directory refresh is limited to once per minute.");
+    directoryRefreshes.set(identity.oid, Date.now());
     if (!authDependencies.refreshDirectory) throw new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable.");
     const prior = employeeCache.get(identity.oid);
     const refresh = await authDependencies.refreshDirectory();
@@ -854,7 +855,6 @@ app.post("/api/directory/refresh", async (req, res) => {
       if (prior) employeeCache.set(identity.oid, prior);
       throw error;
     }
-    directoryRefreshes.set(identity.oid, Date.now());
     const directory = qualification(entry?.employee);
     res.json({ refreshed: true, syncedAt: refresh.syncedAt, recordCount: refresh.recordCount, me: { found: Boolean(entry), accountEnabled: entry?.employee.accountEnabled ?? false, department: directory.department } });
   } catch (error) {
