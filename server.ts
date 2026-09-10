@@ -10,7 +10,6 @@ import { createServer as createViteServer } from "vite";
 export interface CreateAppOptions {
   dataDir: string;
   uploadsDir: string;
-  auth?: unknown;
 }
 
 const appLifecycles = new WeakMap<express.Express, {
