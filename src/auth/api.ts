@@ -2,18 +2,18 @@ import { InteractionRequiredAuthError } from "@azure/msal-browser";
 import { apiScopes, loginRequest, msalInstance } from "./msalConfig";
 
 export async function beginLogin(): Promise<void> {
-  await msalInstance.loginRedirect(loginRequest);
+  if (msalInstance) await msalInstance.loginRedirect(loginRequest);
 }
 
 export async function getAccessToken(): Promise<string | null> {
-  const account = msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0];
+  const account = msalInstance?.getActiveAccount() ?? msalInstance?.getAllAccounts()[0];
   if (!account || apiScopes.length === 0) {
     await beginLogin();
     return null;
   }
 
   try {
-    return (await msalInstance.acquireTokenSilent({ account, scopes: apiScopes })).accessToken;
+    return (await msalInstance!.acquireTokenSilent({ account, scopes: apiScopes })).accessToken;
   } catch (error) {
     if (error instanceof InteractionRequiredAuthError) {
       await beginLogin();
