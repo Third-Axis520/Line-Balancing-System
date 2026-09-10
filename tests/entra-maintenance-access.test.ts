@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -20,6 +20,7 @@ test("case library listing remains publicly readable from injected storage", asy
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 
   try {
+    await assert.rejects(access(path.join(dataDir, "auth.json")));
     const address = server.address();
     assert.ok(address && typeof address !== "string");
     const response = await fetch(`http://127.0.0.1:${address.port}/api/ppts`);

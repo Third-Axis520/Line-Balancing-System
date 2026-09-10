@@ -8,8 +8,8 @@ import { execSync } from "child_process";
 import { createServer as createViteServer } from "vite";
 
 export interface CreateAppOptions {
-  dataDir?: string;
-  uploadsDir?: string;
+  dataDir: string;
+  uploadsDir: string;
   auth?: unknown;
 }
 
@@ -18,12 +18,12 @@ const appLifecycles = new WeakMap<express.Express, {
   ensureSlidesParsed: () => Promise<void>;
 }>();
 
-export function createApp(options: CreateAppOptions = {}): express.Express {
+export function createApp(options: CreateAppOptions): express.Express {
 const app = express();
 
 // Directories
-const DATA_DIR = options.dataDir ?? path.join(process.cwd(), "data");
-const UPLOADS_DIR = options.uploadsDir ?? path.join(process.cwd(), "uploads");
+const DATA_DIR = options.dataDir;
+const UPLOADS_DIR = options.uploadsDir;
 const PPTS_DIR = path.join(UPLOADS_DIR, "ppts");
 const PREVIEWS_DIR = path.join(UPLOADS_DIR, "previews");
 const DB_FILE = path.join(DATA_DIR, "ppts.json");
@@ -51,15 +51,6 @@ if (fs.existsSync(AUTH_FILE)) {
   } catch (e) {
     console.error("Failed to read auth.json:", e);
   }
-} else {
-  fs.writeFileSync(
-    AUTH_FILE,
-    JSON.stringify(
-      { username: authConfig.username, passwordHash: authConfig.passwordHash },
-      null,
-      2
-    )
-  );
 }
 
 // Multer storage for PPT files
