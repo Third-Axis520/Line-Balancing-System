@@ -35,8 +35,7 @@ export interface PPTItem {
 export interface AuthState {
   isAuthenticated: boolean;
   username: string;
-  role: 'planner' | 'guest'; // 'planner' = 企划, 'guest' = 现场员工
-  token?: string;
+  role: 'admin' | 'planner' | 'guest';
 }
 
 export type CategoryType = 
