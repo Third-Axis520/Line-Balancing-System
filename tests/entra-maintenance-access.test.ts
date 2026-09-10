@@ -102,6 +102,27 @@ test("local planner roles only match Entra object ids and directory department t
   } finally { await fixture.close(); }
 });
 
+test("EMPLOYEE_CACHE_TTL_SECONDS=0 disables successful directory caching", async () => {
+  const previous = process.env.EMPLOYEE_CACHE_TTL_SECONDS;
+  process.env.EMPLOYEE_CACHE_TTL_SECONDS = "0";
+  let lookups = 0;
+  const fixture = await startMaintenanceApp({ lookupEmployee: async () => {
+    lookups++;
+    return { id: "employee-1", name: "Assembly - Planner", mail: "planner@example.com", department: "Assembly", accountEnabled: true };
+  } });
+  try {
+    for (const title of ["First", "Second"]) {
+      const response = await fixture.request("/api/ppts/case-1", { method: "PUT", body: JSON.stringify({ title }), headers: { authorization: "Bearer valid", "content-type": "application/json" } });
+      assert.equal(response.status, 200);
+    }
+    assert.equal(lookups, 2);
+  } finally {
+    await fixture.close();
+    if (previous === undefined) delete process.env.EMPLOYEE_CACHE_TTL_SECONDS;
+    else process.env.EMPLOYEE_CACHE_TTL_SECONDS = previous;
+  }
+});
+
 test("case maintenance returns safe qualification failures", async () => {
   const cases = [
     { label: "missing scope", verify: async () => { throw Object.assign(new Error("scope"), { code: "INSUFFICIENT_SCOPE" }); }, lookupEmployee: undefined, departments: [], status: 403, code: "INSUFFICIENT_SCOPE" },
@@ -147,9 +168,9 @@ test("Entra verifier validates signed v1/v2 tokens, tenant, audiences, and scope
     VITE_API_SCOPE: `api://${clientId}/access_as_user`,
     EMPLOYEE_API_URL: "http://127.0.0.1/directory-not-used"
   }, { jwksUrl: `http://127.0.0.1:${address.port}/keys` });
-  const token = async (issuer: string, audience: string, scope = "access_as_user", tokenTenantId: string | null = tenantId) => new SignJWT({
+  const token = async (issuer: string, audience: string, scope = "access_as_user", tokenTenantId: string | null = tenantId, expiration = "5m") => new SignJWT({
     oid: "employee-1", ...(tokenTenantId === null ? {} : { tid: tokenTenantId }), preferred_username: "planner@example.com", name: "Assembly - Planner", scp: scope
-  }).setProtectedHeader({ alg: "RS256", kid: "local-test-key" }).setIssuer(issuer).setAudience(audience).setIssuedAt().setExpirationTime("5m").sign(privateKey);
+  }).setProtectedHeader({ alg: "RS256", kid: "local-test-key" }).setIssuer(issuer).setAudience(audience).setIssuedAt().setExpirationTime(expiration).sign(privateKey);
   try {
     for (const [issuer, audience] of [
       [`https://sts.windows.net/${tenantId}/`, clientId],
@@ -161,8 +182,31 @@ test("Entra verifier validates signed v1/v2 tokens, tenant, audiences, and scope
     await assert.rejects(() => token(`https://sts.windows.net/${tenantId}/`, clientId, "openid").then(auth.verifyAccessToken), { code: "INSUFFICIENT_SCOPE" });
     await assert.rejects(() => token(`https://sts.windows.net/${tenantId}/`, clientId, "access_as_user", "wrong-tenant").then(auth.verifyAccessToken), { code: "UNAUTHORIZED" });
     await assert.rejects(() => token(`https://sts.windows.net/${tenantId}/`, clientId, "access_as_user", null).then(auth.verifyAccessToken), { code: "UNAUTHORIZED" });
+    await assert.rejects(() => token("https://issuer.example/", clientId).then(auth.verifyAccessToken), { code: "UNAUTHORIZED" });
+    await assert.rejects(() => token(`https://sts.windows.net/${tenantId}/`, "wrong-audience").then(auth.verifyAccessToken), { code: "UNAUTHORIZED" });
+    await assert.rejects(() => token(`https://sts.windows.net/${tenantId}/`, clientId, "access_as_user", tenantId, "-1s").then(auth.verifyAccessToken), { code: "UNAUTHORIZED" });
+    const hs256 = await new SignJWT({ oid: "employee-1", tid: tenantId, preferred_username: "planner@example.com", name: "Assembly - Planner", scp: "access_as_user" })
+      .setProtectedHeader({ alg: "HS256", kid: "local-test-key" }).setIssuer(`https://sts.windows.net/${tenantId}/`).setAudience(clientId).setIssuedAt().setExpirationTime("5m").sign(new TextEncoder().encode("test-secret"));
+    await assert.rejects(() => auth.verifyAccessToken(hs256), { code: "UNAUTHORIZED" });
   } finally {
     await new Promise<void>((resolve, reject) => jwksServer.close(error => error ? reject(error) : resolve()));
+  }
+});
+
+test("employee directory timeout aborts and returns a safe failure", async () => {
+  const hangingDirectory = createServer(() => undefined);
+  await new Promise<void>((resolve, reject) => {
+    hangingDirectory.once("error", reject);
+    hangingDirectory.once("listening", resolve);
+    hangingDirectory.listen(0, "127.0.0.1");
+  });
+  const address = hangingDirectory.address();
+  assert.ok(address && typeof address !== "string");
+  const auth = createEntraAuth({ EMPLOYEE_API_URL: `http://127.0.0.1:${address.port}`, EMPLOYEE_API_TIMEOUT_MS: "20" });
+  try {
+    await assert.rejects(() => auth.lookupEmployee(plannerIdentity), { code: "DIRECTORY_UNAVAILABLE" });
+  } finally {
+    await new Promise<void>((resolve, reject) => hangingDirectory.close(error => error ? reject(error) : resolve()));
   }
 });
 

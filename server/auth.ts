@@ -79,16 +79,15 @@ export function createEntraAuth(env: NodeJS.ProcessEnv = process.env, options: {
     },
     async lookupEmployee(identity) {
       const employeeApiUrl = required(env.EMPLOYEE_API_URL, "EMPLOYEE_API_URL");
-      let response: Response;
+      const parsedTimeoutMs = Number.parseInt(env.EMPLOYEE_API_TIMEOUT_MS ?? "", 10);
+      const timeoutMs = Number.isInteger(parsedTimeoutMs) && parsedTimeoutMs > 0 ? parsedTimeoutMs : 10_000;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        response = await fetch(employeeApiUrl);
-      } catch {
-        throw new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable.");
-      }
-      if (!response.ok) {
-        throw new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable.");
-      }
-      try {
+        const response = await fetch(employeeApiUrl, { signal: controller.signal });
+        if (!response.ok) {
+          throw new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable.");
+        }
         const body: unknown = await response.json();
         const employees = Array.isArray(body) ? body : Array.isArray((body as { value?: unknown }).value) ? (body as { value: unknown[] }).value : [];
         const normalized = employees.map((item): DirectoryEmployee | undefined => {
@@ -105,6 +104,8 @@ export function createEntraAuth(env: NodeJS.ProcessEnv = process.env, options: {
       } catch (error) {
         if (error instanceof AuthFailure) throw error;
         throw new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable.");
+      } finally {
+        clearTimeout(timeout);
       }
     }
   };

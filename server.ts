@@ -37,7 +37,10 @@ for (const dir of [DATA_DIR, UPLOADS_DIR, PPTS_DIR, PREVIEWS_DIR]) {
 }
 
 const authDependencies = options.auth ?? createEntraAuth();
-const employeeCacheTtlMs = Math.max(0, Number.parseInt(process.env.EMPLOYEE_CACHE_TTL_SECONDS ?? "3600", 10) || 3600) * 1000;
+const parsedEmployeeCacheTtlSeconds = Number.parseInt(process.env.EMPLOYEE_CACHE_TTL_SECONDS ?? "", 10);
+const employeeCacheTtlMs = (Number.isInteger(parsedEmployeeCacheTtlSeconds) && parsedEmployeeCacheTtlSeconds >= 0
+  ? parsedEmployeeCacheTtlSeconds
+  : 3600) * 1000;
 const employeeCache = new Map<string, { employee: import("./server/auth.js").DirectoryEmployee; expiresAt: number }>();
 let roleConfig: { admins: string[]; planners: string[] } = { admins: [], planners: [] };
 if (fs.existsSync(AUTH_FILE)) {
@@ -711,7 +714,7 @@ async function requirePlanner(req: express.Request, res: express.Response, next:
       const found = await authDependencies.lookupEmployee(identity);
       if (!found) throw new AuthFailure(403, "NOT_IN_DIRECTORY", "The signed-in user is not in the employee directory.");
       employee = { employee: found, expiresAt: Date.now() + employeeCacheTtlMs };
-      employeeCache.set(identity.oid, employee);
+      if (employeeCacheTtlMs > 0) employeeCache.set(identity.oid, employee);
     }
     if (!employee.employee.accountEnabled) {
       throw new AuthFailure(403, "ACCOUNT_DISABLED", "The employee account is disabled.");
