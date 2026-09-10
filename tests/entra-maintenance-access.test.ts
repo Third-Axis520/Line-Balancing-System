@@ -135,6 +135,21 @@ test("planner role mutation returns a safe failure while another process holds t
   } finally { await fixture.close(); }
 });
 
+test("planner role mutation reclaims an expired auth lock without waiting for operator cleanup", async () => {
+  const fixture = await startMaintenanceApp({ admins: [plannerIdentity.oid], planners: [] });
+  const plannerOid = "33333333-3333-4333-8333-333333333333";
+  try {
+    await writeFile(path.join(fixture.root, "data", "auth.json.lock"), JSON.stringify({ pid: 99999, timestamp: Date.now() - 6_000, token: "abandoned-lock" }));
+    const response = await fixture.request("/api/admin/planners", {
+      method: "PUT",
+      headers: { authorization: "Bearer valid", "content-type": "application/json" },
+      body: JSON.stringify({ oid: plannerOid })
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { planners: [plannerOid] });
+  } finally { await fixture.close(); }
+});
+
 test("a successful upstream directory clear never restores stale local authorization data", async () => {
   let lookups = 0;
   const fixture = await startMaintenanceApp({

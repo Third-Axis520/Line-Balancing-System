@@ -4,6 +4,7 @@ import fs from "fs";
 import multer from "multer";
 import JSZip from "jszip";
 import { execSync } from "child_process";
+import { randomUUID } from "crypto";
 import { createServer as createViteServer } from "vite";
 import { AuthDependencies, AuthFailure, createEntraAuth, EntraIdentity } from "./server/auth.js";
 
@@ -714,22 +715,60 @@ function appRole(identity: EntraIdentity): "admin" | "planner" | "reader" {
 
 const ROLE_LOCK_RETRIES = 25;
 const ROLE_LOCK_RETRY_MS = 20;
+const STALE_ROLE_LOCK_MS = 5_000;
 
 function pause(ms: number) {
   return new Promise<void>(resolve => setTimeout(resolve, ms));
+}
+
+async function reclaimStaleRoleLock(lockFile: string): Promise<boolean> {
+  let record: { timestamp?: unknown; token?: unknown };
+  try {
+    record = JSON.parse(await fs.promises.readFile(lockFile, "utf-8")) as { timestamp?: unknown; token?: unknown };
+  } catch {
+    return false;
+  }
+  if (typeof record.timestamp !== "number" || typeof record.token !== "string" || Date.now() - record.timestamp < STALE_ROLE_LOCK_MS) return false;
+  const quarantinedLock = `${lockFile}.stale.${randomUUID()}`;
+  try {
+    await fs.promises.rename(lockFile, quarantinedLock);
+    await fs.promises.unlink(quarantinedLock);
+    return true;
+  } catch {
+    await fs.promises.unlink(quarantinedLock).catch(() => undefined);
+    return false;
+  }
+}
+
+async function ownsRoleLock(lockFile: string, token: string): Promise<boolean> {
+  try {
+    const record = JSON.parse(await fs.promises.readFile(lockFile, "utf-8")) as { token?: unknown };
+    return record.token === token;
+  } catch {
+    return false;
+  }
+}
+
+async function assertRoleLockOwnership(lockFile: string, token: string) {
+  if (await ownsRoleLock(lockFile, token)) return;
+  // The lock was reclaimed or otherwise lost before this writer could commit.
+  throw new AuthFailure(503, "ROLE_UPDATE_UNAVAILABLE", "Role configuration is temporarily unavailable.");
 }
 
 async function mutateRoleConfig(mutator: (current: RoleConfig) => RoleConfig): Promise<RoleConfig> {
   const lockFile = `${AUTH_FILE}.lock`;
   let lock: fs.promises.FileHandle | undefined;
   let temporaryFile: string | undefined;
+  const lockToken = randomUUID();
   try {
     for (let attempt = 0; attempt < ROLE_LOCK_RETRIES; attempt++) {
       try {
         lock = await fs.promises.open(lockFile, "wx");
+        await lock.writeFile(JSON.stringify({ pid: process.pid, timestamp: Date.now(), token: lockToken }), "utf-8");
         break;
       } catch (error) {
         if (!(error && typeof error === "object" && (error as NodeJS.ErrnoException).code === "EEXIST")) throw error;
+        if (await reclaimStaleRoleLock(lockFile)) continue;
         await pause(ROLE_LOCK_RETRY_MS);
       }
     }
@@ -737,6 +776,7 @@ async function mutateRoleConfig(mutator: (current: RoleConfig) => RoleConfig): P
     const next = mutator(loadRoleConfig());
     temporaryFile = `${AUTH_FILE}.${process.pid}.${Date.now()}.tmp`;
     await fs.promises.writeFile(temporaryFile, JSON.stringify(next, null, 2), "utf-8");
+    await assertRoleLockOwnership(lockFile, lockToken);
     await fs.promises.rename(temporaryFile, AUTH_FILE);
     temporaryFile = undefined;
     roleConfig = next;
@@ -747,7 +787,7 @@ async function mutateRoleConfig(mutator: (current: RoleConfig) => RoleConfig): P
   } finally {
     if (temporaryFile) await fs.promises.unlink(temporaryFile).catch(() => undefined);
     if (lock) await lock.close().catch(() => undefined);
-    if (lock) await fs.promises.unlink(lockFile).catch(() => undefined);
+    if (lock && await ownsRoleLock(lockFile, lockToken)) await fs.promises.unlink(lockFile).catch(() => undefined);
   }
 }
 
