@@ -3,13 +3,14 @@ import path from "path";
 import fs from "fs";
 import multer from "multer";
 import JSZip from "jszip";
-import crypto from "crypto";
 import { execSync } from "child_process";
 import { createServer as createViteServer } from "vite";
+import { AuthDependencies, AuthFailure, createEntraAuth, EntraIdentity } from "./server/auth.js";
 
 export interface CreateAppOptions {
   dataDir: string;
   uploadsDir: string;
+  auth?: AuthDependencies;
 }
 
 const appLifecycles = new WeakMap<express.Express, {
@@ -35,20 +36,22 @@ for (const dir of [DATA_DIR, UPLOADS_DIR, PPTS_DIR, PREVIEWS_DIR]) {
   }
 }
 
-// Default planner credentials
-let authConfig = {
-  username: "qihua",
-  passwordHash: crypto.createHash("sha256").update("qihua123").digest("hex"),
-  activeTokens: new Set<string>()
-};
-
+const authDependencies = options.auth ?? createEntraAuth();
+const employeeCacheTtlMs = Math.max(0, Number.parseInt(process.env.EMPLOYEE_CACHE_TTL_SECONDS ?? "3600", 10) || 3600) * 1000;
+const employeeCache = new Map<string, { employee: import("./server/auth.js").DirectoryEmployee; expiresAt: number }>();
+let roleConfig: { admins: string[]; planners: string[] } = { admins: [], planners: [] };
 if (fs.existsSync(AUTH_FILE)) {
   try {
-    const raw = JSON.parse(fs.readFileSync(AUTH_FILE, "utf-8"));
-    authConfig.username = raw.username || "qihua";
-    authConfig.passwordHash = raw.passwordHash || authConfig.passwordHash;
-  } catch (e) {
-    console.error("Failed to read auth.json:", e);
+    const raw: unknown = JSON.parse(fs.readFileSync(AUTH_FILE, "utf-8"));
+    if (raw && typeof raw === "object") {
+      const config = raw as { admins?: unknown; planners?: unknown };
+      if (Array.isArray(config.admins) && Array.isArray(config.planners)
+        && config.admins.every(value => typeof value === "string") && config.planners.every(value => typeof value === "string")) {
+        roleConfig = { admins: config.admins, planners: config.planners };
+      }
+    }
+  } catch {
+    console.error("Failed to read auth.json roles.");
   }
 }
 
@@ -684,17 +687,55 @@ async function generateSeedDataIfEmpty() {
   console.log("Sample PPTs created successfully.");
 }
 
-// Authentication middleware for 企划
-function requirePlanner(req: express.Request, res: express.Response, next: express.NextFunction) {
+function sendAuthFailure(res: express.Response, failure: AuthFailure) {
+  return res.status(failure.status).json({ code: failure.code, message: failure.message });
+}
+
+function isListed(values: string[], identity: EntraIdentity) {
+  const candidates = [identity.oid, identity.preferredUsername.toLowerCase()];
+  return values.some(value => candidates.includes(value.toLowerCase()));
+}
+
+async function requirePlanner(req: express.Request, res: express.Response, next: express.NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "需要企划账号权限，请先登录企划账号" });
+    return sendAuthFailure(res, new AuthFailure(401, "UNAUTHORIZED", "Authentication is required."));
   }
-  const token = authHeader.split(" ")[1];
-  if (!authConfig.activeTokens.has(token)) {
-    return res.status(401).json({ error: "登录凭证已过期或无效，请重新登录" });
+  const token = authHeader.slice("Bearer ".length).trim();
+  if (!token) {
+    return sendAuthFailure(res, new AuthFailure(401, "UNAUTHORIZED", "Authentication is required."));
   }
-  next();
+  try {
+    const identity = await authDependencies.verifyAccessToken(token);
+    let employee = employeeCache.get(identity.oid);
+    if (!employee || employee.expiresAt <= Date.now()) {
+      const found = await authDependencies.lookupEmployee(identity);
+      if (!found) throw new AuthFailure(403, "NOT_IN_DIRECTORY", "The signed-in user is not in the employee directory.");
+      employee = { employee: found, expiresAt: Date.now() + employeeCacheTtlMs };
+      employeeCache.set(identity.oid, employee);
+    }
+    if (!employee.employee.accountEnabled) {
+      throw new AuthFailure(403, "ACCOUNT_DISABLED", "The employee account is disabled.");
+    }
+    const department = employee.employee.name.split("-", 1)[0].trim();
+    const allowedDepartments = authDependencies.allowedDepartments ?? [];
+    if (allowedDepartments.length > 0 && !allowedDepartments.includes(department)) {
+      throw new AuthFailure(403, "DEPARTMENT_NOT_ALLOWED", "The employee department is not allowed.");
+    }
+    const bootstrapAdmins = (process.env.SUPER_USER_EMAILS ?? "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean);
+    const admin = isListed(roleConfig.admins, identity) || bootstrapAdmins.includes(identity.preferredUsername.toLowerCase());
+    if (!admin && !isListed(roleConfig.planners, identity)) {
+      throw new AuthFailure(403, "ROLE_NOT_ALLOWED", "Planner or admin role is required.");
+    }
+    res.locals.identity = identity;
+    next();
+  } catch (error) {
+    if (error instanceof AuthFailure) return sendAuthFailure(res, error);
+    if (error && typeof error === "object" && (error as { code?: unknown }).code === "INSUFFICIENT_SCOPE") {
+      return sendAuthFailure(res, new AuthFailure(403, "INSUFFICIENT_SCOPE", "The access_as_user scope is required."));
+    }
+    return sendAuthFailure(res, new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable."));
+  }
 }
 
 // ---------------- API Routes ----------------
@@ -702,64 +743,6 @@ function requirePlanner(req: express.Request, res: express.Response, next: expre
 // Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", time: new Date().toISOString() });
-});
-
-// Auth endpoints
-app.post("/api/auth/login", (req, res) => {
-  const { username, password } = req.body;
-  const hash = crypto.createHash("sha256").update(password || "").digest("hex");
-
-  if (username === authConfig.username && hash === authConfig.passwordHash) {
-    const token = crypto.randomBytes(32).toString("hex");
-    authConfig.activeTokens.add(token);
-    return res.json({
-      success: true,
-      token,
-      username: authConfig.username,
-      role: "planner",
-      message: "企划账号登录成功"
-    });
-  }
-
-  return res.status(401).json({ success: false, error: "企划账号或密码错误 (默认账号: qihua / 密码: qihua123)" });
-});
-
-app.post("/api/auth/check", (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.split(" ")[1];
-    if (authConfig.activeTokens.has(token)) {
-      return res.json({ valid: true, username: authConfig.username, role: "planner" });
-    }
-  }
-  res.json({ valid: false, role: "guest" });
-});
-
-app.post("/api/auth/logout", (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.split(" ")[1];
-    authConfig.activeTokens.delete(token);
-  }
-  res.json({ success: true });
-});
-
-app.post("/api/auth/change-password", requirePlanner, (req, res) => {
-  const { oldPassword, newPassword } = req.body;
-  const oldHash = crypto.createHash("sha256").update(oldPassword || "").digest("hex");
-  if (oldHash !== authConfig.passwordHash) {
-    return res.status(400).json({ error: "原密码不正确" });
-  }
-  if (!newPassword || newPassword.length < 4) {
-    return res.status(400).json({ error: "新密码长度至少4位" });
-  }
-  const newHash = crypto.createHash("sha256").update(newPassword).digest("hex");
-  authConfig.passwordHash = newHash;
-  fs.writeFileSync(
-    AUTH_FILE,
-    JSON.stringify({ username: authConfig.username, passwordHash: newHash }, null, 2)
-  );
-  res.json({ success: true, message: "密码修改成功" });
 });
 
 // PPT listing - Open to ALL employees without login
@@ -953,7 +936,7 @@ app.post("/api/ppts", requirePlanner, upload.single("file"), async (req, res) =>
       fileUrl: `/api/ppts/${id}/download`,
       category: category || "生产线平衡与节拍改善",
       version: version?.trim() || "v1.0",
-      uploader: authConfig.username === "qihua" ? "企划部" : authConfig.username,
+      uploader: (res.locals.identity as EntraIdentity).name,
       uploadDate: dateStr,
       updateDate: dateStr,
       description: description?.trim() || "发布的生产线平衡改善案例PPT文档",
