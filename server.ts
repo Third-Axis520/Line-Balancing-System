@@ -41,7 +41,8 @@ const parsedEmployeeCacheTtlSeconds = Number.parseInt(process.env.EMPLOYEE_CACHE
 const employeeCacheTtlMs = (Number.isInteger(parsedEmployeeCacheTtlSeconds) && parsedEmployeeCacheTtlSeconds >= 0
   ? parsedEmployeeCacheTtlSeconds
   : 3600) * 1000;
-const employeeCache = new Map<string, { employee: import("./server/auth.js").DirectoryEmployee; expiresAt: number }>();
+const employeeCache = new Map<string, { employee: import("./server/auth.js").DirectoryEmployee; expiresAt: number; syncedAt: string }>();
+const directoryRefreshes = new Map<string, number>();
 let roleConfig: { admins: string[]; planners: string[] } = { admins: [], planners: [] };
 if (fs.existsSync(AUTH_FILE)) {
   try {
@@ -698,49 +699,169 @@ function isListed(values: string[], identity: EntraIdentity) {
   return values.some(value => value === identity.oid);
 }
 
-async function requirePlanner(req: express.Request, res: express.Response, next: express.NextFunction) {
+function bootstrapAdmins() {
+  return (process.env.SUPER_USER_EMAILS ?? "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean);
+}
+
+function appRole(identity: EntraIdentity): "admin" | "planner" | "reader" {
+  if (isListed(roleConfig.admins, identity) || bootstrapAdmins().includes(identity.preferredUsername.toLowerCase())) return "admin";
+  return isListed(roleConfig.planners, identity) ? "planner" : "reader";
+}
+
+function saveRoles() {
+  fs.writeFileSync(AUTH_FILE, JSON.stringify(roleConfig, null, 2));
+}
+
+async function requireIdentity(req: express.Request): Promise<EntraIdentity> {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return sendAuthFailure(res, new AuthFailure(401, "UNAUTHORIZED", "Authentication is required."));
-  }
+  if (!authHeader?.startsWith("Bearer ")) throw new AuthFailure(401, "UNAUTHORIZED", "Authentication is required.");
   const token = authHeader.slice("Bearer ".length).trim();
-  if (!token) {
-    return sendAuthFailure(res, new AuthFailure(401, "UNAUTHORIZED", "Authentication is required."));
-  }
+  if (!token) throw new AuthFailure(401, "UNAUTHORIZED", "Authentication is required.");
   try {
-    const identity = await authDependencies.verifyAccessToken(token);
-    let employee = employeeCache.get(identity.oid);
-    if (!employee || employee.expiresAt <= Date.now()) {
-      const found = await authDependencies.lookupEmployee(identity);
-      if (!found) throw new AuthFailure(403, "NOT_IN_DIRECTORY", "The signed-in user is not in the employee directory.");
-      employee = { employee: found, expiresAt: Date.now() + employeeCacheTtlMs };
-      if (employeeCacheTtlMs > 0) employeeCache.set(identity.oid, employee);
+    return await authDependencies.verifyAccessToken(token);
+  } catch (error) {
+    if (error instanceof AuthFailure) throw error;
+    if (error && typeof error === "object" && (error as { code?: unknown }).code === "INSUFFICIENT_SCOPE") {
+      throw new AuthFailure(403, "INSUFFICIENT_SCOPE", "The access_as_user scope is required.");
     }
-    if (!employee.employee.accountEnabled) {
-      throw new AuthFailure(403, "ACCOUNT_DISABLED", "The employee account is disabled.");
-    }
-    const department = employee.employee.department?.trim() || employee.employee.name.split("-", 1)[0].trim();
-    const allowedDepartments = authDependencies.allowedDepartments ?? [];
-    if (allowedDepartments.length > 0 && !allowedDepartments.includes(department)) {
-      throw new AuthFailure(403, "DEPARTMENT_NOT_ALLOWED", "The employee department is not allowed.");
-    }
-    const bootstrapAdmins = (process.env.SUPER_USER_EMAILS ?? "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean);
-    const admin = isListed(roleConfig.admins, identity) || bootstrapAdmins.includes(identity.preferredUsername.toLowerCase());
-    if (!admin && !isListed(roleConfig.planners, identity)) {
+    throw new AuthFailure(401, "UNAUTHORIZED", "The access token is invalid.");
+  }
+}
+
+async function findEmployee(identity: EntraIdentity, force = false) {
+  const cached = employeeCache.get(identity.oid);
+  if (!force && cached && cached.expiresAt > Date.now()) return cached;
+  const found = await authDependencies.lookupEmployee(identity);
+  if (!found) return undefined;
+  const entry = { employee: found, expiresAt: Date.now() + employeeCacheTtlMs, syncedAt: new Date().toISOString() };
+  if (employeeCacheTtlMs > 0) employeeCache.set(identity.oid, entry);
+  return entry;
+}
+
+function qualification(employee: import("./server/auth.js").DirectoryEmployee | undefined): { allowed: boolean; reason: string | null; department: string | null } {
+  if (!employee) return { allowed: false, reason: "NOT_IN_DIRECTORY", department: null };
+  if (!employee.accountEnabled) return { allowed: false, reason: "ACCOUNT_DISABLED", department: employee.department?.trim() || employee.name.split("-", 1)[0].trim() || null };
+  const department = employee.department?.trim() || employee.name.split("-", 1)[0].trim() || null;
+  const allowedDepartments = authDependencies.allowedDepartments ?? [];
+  if (allowedDepartments.length > 0 && (!department || !allowedDepartments.includes(department))) return { allowed: false, reason: "DEPARTMENT_NOT_ALLOWED", department };
+  return { allowed: true, reason: null, department };
+}
+
+async function requirePlanner(req: express.Request, res: express.Response, next: express.NextFunction) {
+  try {
+    const identity = await requireIdentity(req);
+    const entry = await findEmployee(identity);
+    const access = qualification(entry?.employee);
+    if (!access.allowed) throw new AuthFailure(403, access.reason!, "The signed-in user is not eligible for access.");
+    if (appRole(identity) === "reader") {
       throw new AuthFailure(403, "ROLE_NOT_ALLOWED", "Planner or admin role is required.");
     }
     res.locals.identity = identity;
     next();
   } catch (error) {
     if (error instanceof AuthFailure) return sendAuthFailure(res, error);
-    if (error && typeof error === "object" && (error as { code?: unknown }).code === "INSUFFICIENT_SCOPE") {
-      return sendAuthFailure(res, new AuthFailure(403, "INSUFFICIENT_SCOPE", "The access_as_user scope is required."));
-    }
     return sendAuthFailure(res, new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable."));
   }
 }
 
 // ---------------- API Routes ----------------
+
+app.get("/api/auth/me", async (req, res) => {
+  try {
+    const identity = await requireIdentity(req);
+    const entry = await findEmployee(identity);
+    const directory = qualification(entry?.employee);
+    const role = appRole(identity);
+    const allowed = directory.allowed && role !== "reader";
+    res.json({
+      authenticated: true,
+      identity: { oid: identity.oid, email: identity.preferredUsername, name: identity.name },
+      directory: {
+        found: Boolean(entry),
+        accountEnabled: entry?.employee.accountEnabled ?? false,
+        department: directory.department,
+        syncedAt: entry?.syncedAt ?? null
+      },
+      access: { allowed, reason: allowed ? null : directory.reason ?? "ROLE_NOT_ALLOWED" },
+      app: { role }
+    });
+  } catch (error) {
+    if (error instanceof AuthFailure) return sendAuthFailure(res, error);
+    return sendAuthFailure(res, new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable."));
+  }
+});
+
+async function requireEligibleAdmin(req: express.Request): Promise<EntraIdentity> {
+  const identity = await requireIdentity(req);
+  const entry = await findEmployee(identity);
+  const access = qualification(entry?.employee);
+  if (!access.allowed || appRole(identity) !== "admin") throw new AuthFailure(403, "INSUFFICIENT_ROLE", "Admin role is required.");
+  return identity;
+}
+
+app.get("/api/admin/planners", async (req, res) => {
+  try {
+    await requireEligibleAdmin(req);
+    res.json({ planners: roleConfig.planners });
+  } catch (error) {
+    if (error instanceof AuthFailure) return sendAuthFailure(res, error);
+    return sendAuthFailure(res, new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable."));
+  }
+});
+
+app.put("/api/admin/planners", async (req, res) => {
+  try {
+    await requireEligibleAdmin(req);
+    const oid = typeof req.body?.oid === "string" ? req.body.oid.trim() : "";
+    if (!oid) return res.status(400).json({ code: "INVALID_REQUEST", message: "oid is required." });
+    if (!roleConfig.planners.includes(oid)) {
+      roleConfig = { ...roleConfig, planners: [...roleConfig.planners, oid] };
+      saveRoles();
+    }
+    res.json({ planners: roleConfig.planners });
+  } catch (error) {
+    if (error instanceof AuthFailure) return sendAuthFailure(res, error);
+    return sendAuthFailure(res, new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable."));
+  }
+});
+
+app.delete("/api/admin/planners/:oid", async (req, res) => {
+  try {
+    await requireEligibleAdmin(req);
+    const oid = req.params.oid.trim();
+    roleConfig = { ...roleConfig, planners: roleConfig.planners.filter(value => value !== oid) };
+    saveRoles();
+    res.json({ planners: roleConfig.planners });
+  } catch (error) {
+    if (error instanceof AuthFailure) return sendAuthFailure(res, error);
+    return sendAuthFailure(res, new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable."));
+  }
+});
+
+app.post("/api/directory/refresh", async (req, res) => {
+  try {
+    const identity = await requireIdentity(req);
+    const previousRefresh = directoryRefreshes.get(identity.oid) ?? 0;
+    if (Date.now() - previousRefresh < 60_000) throw new AuthFailure(429, "RATE_LIMITED", "Directory refresh is limited to once per minute.");
+    if (!authDependencies.refreshDirectory) throw new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable.");
+    const prior = employeeCache.get(identity.oid);
+    const refresh = await authDependencies.refreshDirectory();
+    employeeCache.delete(identity.oid);
+    let entry: Awaited<ReturnType<typeof findEmployee>>;
+    try {
+      entry = await findEmployee(identity, true);
+    } catch (error) {
+      if (prior) employeeCache.set(identity.oid, prior);
+      throw error;
+    }
+    directoryRefreshes.set(identity.oid, Date.now());
+    const directory = qualification(entry?.employee);
+    res.json({ refreshed: true, syncedAt: refresh.syncedAt, recordCount: refresh.recordCount, me: { found: Boolean(entry), accountEnabled: entry?.employee.accountEnabled ?? false, department: directory.department } });
+  } catch (error) {
+    if (error instanceof AuthFailure) return sendAuthFailure(res, error);
+    return sendAuthFailure(res, new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable."));
+  }
+});
 
 // Health check
 app.get("/api/health", (req, res) => {

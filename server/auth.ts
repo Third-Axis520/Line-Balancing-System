@@ -17,6 +17,7 @@ export interface DirectoryEmployee {
 export interface AuthDependencies {
   verifyAccessToken(token: string): Promise<EntraIdentity>;
   lookupEmployee(identity: EntraIdentity): Promise<DirectoryEmployee | undefined>;
+  refreshDirectory?(): Promise<{ syncedAt: string; recordCount: number }>;
   allowedDepartments?: string[];
 }
 
@@ -106,6 +107,23 @@ export function createEntraAuth(env: NodeJS.ProcessEnv = process.env, options: {
         throw new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable.");
       } finally {
         clearTimeout(timeout);
+      }
+    },
+    async refreshDirectory() {
+      const employeeApiUrl = required(env.EMPLOYEE_API_URL, "EMPLOYEE_API_URL");
+      const cacheUrl = `${employeeApiUrl.replace(/\/+$/, "")}/cache`;
+      try {
+        const response = await fetch(cacheUrl, { method: "DELETE" });
+        if (!response.ok) throw new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable.");
+        const body: unknown = await response.json().catch(() => ({}));
+        const result = body && typeof body === "object" ? body as Record<string, unknown> : {};
+        return {
+          syncedAt: typeof result.syncedAt === "string" ? result.syncedAt : new Date().toISOString(),
+          recordCount: typeof result.recordCount === "number" ? result.recordCount : 0
+        };
+      } catch (error) {
+        if (error instanceof AuthFailure) throw error;
+        throw new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable.");
       }
     }
   };

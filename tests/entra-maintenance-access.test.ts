@@ -20,6 +20,7 @@ async function startMaintenanceApp(options: {
   admins?: string[];
   planners?: string[];
   allowedDepartments?: string[];
+  refreshDirectory?: () => Promise<{ syncedAt: string; recordCount: number }>;
 }) {
   const root = await mkdtemp(path.join(os.tmpdir(), "entra-maintenance-"));
   const dataDir = path.join(root, "data");
@@ -40,6 +41,7 @@ async function startMaintenanceApp(options: {
     auth: {
       verifyAccessToken: options.verify ?? (async () => plannerIdentity),
       lookupEmployee: options.lookupEmployee ?? (async () => ({ id: "employee-1", name: "Assembly - Planner", mail: "planner@example.com", department: "Assembly", accountEnabled: true })),
+      refreshDirectory: options.refreshDirectory,
       allowedDepartments: options.allowedDepartments ?? []
     }
   }));
@@ -78,6 +80,57 @@ test("case maintenance requires a Bearer token and permits a directory-approved 
   } finally {
     await fixture.close();
   }
+});
+
+test("auth status reports directory eligibility and local app role without turning denials into HTTP errors", async () => {
+  const fixture = await startMaintenanceApp({ planners: [], allowedDepartments: ["Assembly"] });
+  try {
+    const response = await fixture.request("/api/auth/me", { headers: { authorization: "Bearer valid" } });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual({ ...body, directory: { ...body.directory, syncedAt: null } }, {
+      authenticated: true,
+      identity: { oid: "employee-1", email: "planner@example.com", name: "Assembly - Planner" },
+      directory: { found: true, accountEnabled: true, department: "Assembly", syncedAt: null },
+      access: { allowed: false, reason: "ROLE_NOT_ALLOWED" },
+      app: { role: "reader" }
+    });
+    assert.equal(typeof body.directory.syncedAt, "string");
+  } finally { await fixture.close(); }
+});
+
+test("eligible admins can grant and revoke planner OID roles immediately", async () => {
+  const fixture = await startMaintenanceApp({ admins: [plannerIdentity.oid], planners: [] });
+  try {
+    const headers = { authorization: "Bearer valid", "content-type": "application/json" };
+    const before = await fixture.request("/api/admin/planners", { headers });
+    assert.deepEqual(await before.json(), { planners: [] });
+    const granted = await fixture.request("/api/admin/planners", { method: "PUT", headers, body: JSON.stringify({ oid: "employee-2" }) });
+    assert.equal(granted.status, 200);
+    assert.deepEqual(await granted.json(), { planners: ["employee-2"] });
+    const after = await fixture.request("/api/admin/planners", { headers });
+    assert.deepEqual(await after.json(), { planners: ["employee-2"] });
+    const revoked = await fixture.request("/api/admin/planners/employee-2", { method: "DELETE", headers });
+    assert.equal(revoked.status, 200);
+    assert.deepEqual(await revoked.json(), { planners: [] });
+  } finally { await fixture.close(); }
+});
+
+test("directory refresh authenticates but permits ineligible users, invalidates cache, and rate limits by OID", async () => {
+  let refreshes = 0;
+  const fixture = await startMaintenanceApp({
+    planners: [],
+    lookupEmployee: async () => ({ id: "employee-1", name: "Assembly - Planner", mail: "planner@example.com", department: "Assembly", accountEnabled: false }),
+    refreshDirectory: async () => ({ syncedAt: "2026-09-10T00:00:00.000Z", recordCount: ++refreshes })
+  });
+  try {
+    const first = await fixture.request("/api/directory/refresh", { method: "POST", headers: { authorization: "Bearer valid" } });
+    assert.equal(first.status, 200);
+    assert.deepEqual(await first.json(), { refreshed: true, syncedAt: "2026-09-10T00:00:00.000Z", recordCount: 1, me: { found: true, accountEnabled: false, department: "Assembly" } });
+    const limited = await fixture.request("/api/directory/refresh", { method: "POST", headers: { authorization: "Bearer valid" } });
+    assert.equal(limited.status, 429);
+    assert.deepEqual(await limited.json(), { code: "RATE_LIMITED", message: "Directory refresh is limited to once per minute." });
+  } finally { await fixture.close(); }
 });
 
 test("case maintenance rejects a valid employee with no local role", async () => {
@@ -207,6 +260,32 @@ test("employee directory timeout aborts and returns a safe failure", async () =>
     await assert.rejects(() => auth.lookupEmployee(plannerIdentity), { code: "DIRECTORY_UNAVAILABLE" });
   } finally {
     await new Promise<void>((resolve, reject) => hangingDirectory.close(error => error ? reject(error) : resolve()));
+  }
+});
+
+test("directory client clears the cache endpoint derived from the employee API base", async () => {
+  let requestPath = "";
+  let requestMethod = "";
+  const directory = createServer((request, response) => {
+    requestPath = request.url ?? "";
+    requestMethod = request.method ?? "";
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ syncedAt: "2026-09-10T00:00:00.000Z", recordCount: 7 }));
+  });
+  await new Promise<void>((resolve, reject) => {
+    directory.once("error", reject);
+    directory.once("listening", resolve);
+    directory.listen(0, "127.0.0.1");
+  });
+  const address = directory.address();
+  assert.ok(address && typeof address !== "string");
+  const auth = createEntraAuth({ EMPLOYEE_API_URL: `http://127.0.0.1:${address.port}/employees/` });
+  try {
+    assert.deepEqual(await auth.refreshDirectory!(), { syncedAt: "2026-09-10T00:00:00.000Z", recordCount: 7 });
+    assert.equal(requestMethod, "DELETE");
+    assert.equal(requestPath, "/employees/cache");
+  } finally {
+    await new Promise<void>((resolve, reject) => directory.close(error => error ? reject(error) : resolve()));
   }
 });
 
