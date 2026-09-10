@@ -8,19 +8,19 @@ import { createApp } from "../server.js";
 
 test("case library listing remains publicly readable from injected storage", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "case-library-"));
-  const dataDir = path.join(root, "data");
-  const uploadsDir = path.join(root, "uploads");
-  await mkdir(dataDir, { recursive: true });
-  await mkdir(uploadsDir, { recursive: true });
-  await writeFile(
-    path.join(dataDir, "ppts.json"),
-    JSON.stringify([{ id: "case-1", title: "Case 1", description: "fixture", category: "fixture", downloadCount: 2 }])
-  );
-  await writeFile(path.join(uploadsDir, "fixture.txt"), "uploaded fixture");
-
   let server: ReturnType<typeof createServer> | undefined;
 
   try {
+    const dataDir = path.join(root, "data");
+    const uploadsDir = path.join(root, "uploads");
+    await mkdir(dataDir, { recursive: true });
+    await mkdir(uploadsDir, { recursive: true });
+    await writeFile(
+      path.join(dataDir, "ppts.json"),
+      JSON.stringify([{ id: "case-1", title: "Case 1", description: "fixture", category: "fixture", downloadCount: 2 }])
+    );
+    await writeFile(path.join(uploadsDir, "fixture.txt"), "uploaded fixture");
+
     const appServer = createServer(createApp({ dataDir, uploadsDir }));
     server = appServer;
     await new Promise<void>((resolve, reject) => {
