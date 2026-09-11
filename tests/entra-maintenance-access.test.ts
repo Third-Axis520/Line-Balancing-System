@@ -14,8 +14,27 @@ const plannerIdentity = {
   name: "Assembly - Planner"
 };
 
+const adminIdentity = {
+  oid: "admin-1",
+  preferredUsername: "admin@example.com",
+  name: "Assembly - Admin"
+};
+
+const employeeIdentity = {
+  oid: "employee-2",
+  preferredUsername: "employee@example.com",
+  name: "Assembly - Employee"
+};
+
+const managedPlannerIdentity = {
+  oid: "33333333-3333-4333-8333-333333333333",
+  preferredUsername: "managed-planner@example.com",
+  name: "Assembly - Managed Planner"
+};
+
 async function startMaintenanceApp(options: {
-  verify?: () => Promise<typeof plannerIdentity>;
+  verify?: (token: string) => Promise<EntraIdentity>;
+  identities?: Record<string, EntraIdentity>;
   lookupEmployee?: (identity: EntraIdentity) => Promise<{ id: string; name: string; mail: string; department?: string; accountEnabled: boolean } | undefined>;
   admins?: string[];
   planners?: string[];
@@ -35,12 +54,13 @@ async function startMaintenanceApp(options: {
     imageCount: 0, images: []
   }]));
   await writeFile(path.join(dataDir, "auth.json"), JSON.stringify({ admins: options.admins ?? [], planners: options.planners ?? [plannerIdentity.oid] }));
+  const identities = { valid: plannerIdentity, admin: adminIdentity, planner: managedPlannerIdentity, employee: employeeIdentity, ...options.identities };
 
   const appServer = createServer(createApp({
     dataDir,
     uploadsDir,
     auth: {
-      verifyAccessToken: options.verify ?? (async () => plannerIdentity),
+      verifyAccessToken: options.verify ?? (async token => identities[token] ?? plannerIdentity),
       lookupEmployee: options.lookupEmployee ?? (async () => ({ id: "employee-1", name: "Assembly - Planner", mail: "planner@example.com", department: "Assembly", accountEnabled: true })),
       searchEmployees: options.searchEmployees ?? (async (query) => {
         const normalizedQuery = query.toLowerCase();
@@ -130,6 +150,45 @@ test("eligible admins can grant and revoke planner OID roles immediately", async
     const revoked = await fixture.request(`/api/admin/planners/${plannerOid}`, { method: "DELETE", headers });
     assert.equal(revoked.status, 200);
     assert.deepEqual(await revoked.json(), { planners: [] });
+  } finally { await fixture.close(); }
+});
+
+test("planner role changes immediately control maintenance access", async () => {
+  const fixture = await startMaintenanceApp({
+    admins: [adminIdentity.oid],
+    planners: [],
+    lookupEmployee: async (identity) => ({ id: identity.oid, name: identity.name, mail: identity.preferredUsername, accountEnabled: true })
+  });
+  const plannerHeaders = { authorization: "Bearer planner" };
+  const adminHeaders = { authorization: "Bearer admin", "content-type": "application/json" };
+  const upload = () => {
+    const form = new FormData();
+    form.append("file", new Blob(["fixture presentation"], { type: "application/vnd.ms-powerpoint" }), "immediate-role-change.ppt");
+    form.append("title", "Immediate role change");
+    return fixture.request("/api/ppts", { method: "POST", headers: plannerHeaders, body: form });
+  };
+  try {
+    const denied = await upload();
+    assert.equal(denied.status, 403);
+    assert.deepEqual(await denied.json(), { code: "ROLE_NOT_ALLOWED", message: "Planner or admin role is required." });
+
+    const nonAdminList = await fixture.request("/api/admin/planners", { headers: plannerHeaders });
+    assert.equal(nonAdminList.status, 403);
+    assert.deepEqual(await nonAdminList.json(), { code: "INSUFFICIENT_ROLE", message: "Admin role is required." });
+
+    const granted = await fixture.request("/api/admin/planners", { method: "PUT", headers: adminHeaders, body: JSON.stringify({ oid: managedPlannerIdentity.oid }) });
+    assert.equal(granted.status, 200);
+
+    const allowed = await upload();
+    assert.equal(allowed.status, 200);
+    assert.equal((await allowed.json()).success, true);
+
+    const revoked = await fixture.request(`/api/admin/planners/${managedPlannerIdentity.oid}`, { method: "DELETE", headers: adminHeaders });
+    assert.equal(revoked.status, 200);
+
+    const deniedAfterRevoke = await upload();
+    assert.equal(deniedAfterRevoke.status, 403);
+    assert.deepEqual(await deniedAfterRevoke.json(), { code: "ROLE_NOT_ALLOWED", message: "Planner or admin role is required." });
   } finally { await fixture.close(); }
 });
 
