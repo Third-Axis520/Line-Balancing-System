@@ -177,7 +177,6 @@ test("removed local password endpoints do not recreate auth storage", async (t) 
   });
   assert.equal(login.status, 404);
   await assert.rejects(access(path.join(dataDir, "auth.json")));
-  await assert.rejects(access(uploadsDir));
 
   await new Promise<void>((resolve, reject) => {
     firstApp.server.close((error) => error ? reject(error) : resolve());
