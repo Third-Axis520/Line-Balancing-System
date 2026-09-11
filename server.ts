@@ -459,15 +459,19 @@ async function ensureSlidesParsed() {
         const pptFile = path.join(PPTS_DIR, ppt.storedFileName);
         if (fs.existsSync(pptFile) && ppt.originalFileName.toLowerCase().endsWith(".pptx")) {
           console.log(`Extracting slides for ${ppt.title}...`);
-          const extracted = await extractPptxContent(pptFile, ppt.id);
-          if (extracted.slides && extracted.slides.length > 0) {
-            ppt.slides = extracted.slides;
-            ppt.slideCount = extracted.slideCount;
-            if (extracted.images.length > 0) {
-              ppt.images = extracted.images;
-              ppt.imageCount = extracted.images.length;
+          try {
+            const extracted = await extractPptxContent(pptFile, ppt.id);
+            if (extracted.slides && extracted.slides.length > 0) {
+              ppt.slides = extracted.slides;
+              ppt.slideCount = extracted.slideCount;
+              if (extracted.images.length > 0) {
+                ppt.images = extracted.images;
+                ppt.imageCount = extracted.images.length;
+              }
+              modified = true;
             }
-            modified = true;
+          } catch (error) {
+            console.error(`Failed to extract slides for ${ppt.title}:`, error);
           }
         }
       }
@@ -1226,8 +1230,17 @@ app.post("/api/ppts", requirePlanner, uploadSinglePpt, async (req, res) => {
       tags: parsedTags.length > 0 ? parsedTags : ["线平衡改善", "工时优化"]
     };
 
-    ppts.unshift(newPPT);
-    savePPTs(ppts);
+    const pptsAtCommit = getPPTs();
+    const commitConflict = pptsAtCommit.find(ppt => ppt.title.trim() === normalizedTitle);
+    if (commitConflict) {
+      removeRejectedUpload(filePath, id);
+      return res.status(409).json({
+        error: "案例名称已存在，请选择替换现有案例或修改名称",
+        conflict: { id: commitConflict.id, title: commitConflict.title }
+      });
+    }
+    pptsAtCommit.unshift(newPPT);
+    savePPTs(pptsAtCommit);
 
     res.json({
       success: true,

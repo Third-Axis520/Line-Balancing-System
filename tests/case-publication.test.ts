@@ -4,6 +4,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import JSZip from "jszip";
 import { createApp } from "../server.ts";
 
 test("case publication rejects an unauthenticated upload over HTTP", async (t) => {
@@ -100,6 +101,15 @@ function uploadForm(fields: Record<string, string>, fileName = "case.ppt") {
   return body;
 }
 
+async function uploadPptxForm(title: string) {
+  const body = new FormData();
+  const archive = new JSZip();
+  archive.file("[Content_Types].xml", "<Types />");
+  body.set("title", title);
+  body.set("file", new Blob([await archive.generateAsync({ type: "uint8array" })]), `${title}.pptx`);
+  return body;
+}
+
 test("case publication validates uploaded case metadata and cleans rejected files", async (t) => {
   const fixture = await startPublicationApp(t);
 
@@ -149,6 +159,23 @@ test("case publication rejects a non-string replacement target without persistin
   assert.deepEqual(JSON.parse(await readFile(path.join(fixture.dataDir, "ppts.json"), "utf8")), [existingCase]);
   assert.deepEqual(await readdir(path.join(fixture.uploadsDir, "ppts")), []);
   assert.deepEqual(await readdir(path.join(fixture.uploadsDir, "previews")), []);
+});
+
+test("concurrent publication preserves both validated cases", async (t) => {
+  const fixture = await startPublicationApp(t);
+  const [first, second] = await Promise.all([
+    fixture.request(await uploadPptxForm("Concurrent case one")),
+    fixture.request(await uploadPptxForm("Concurrent case two"))
+  ]);
+
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  const stored = JSON.parse(await readFile(path.join(fixture.dataDir, "ppts.json"), "utf8"));
+  assert.deepEqual(stored.map((ppt: { title: string }) => ppt.title).sort(), [
+    "Concurrent case one",
+    "Concurrent case two",
+    "装配线节拍改善"
+  ].sort());
 });
 
 test("case publication enforces the configured upload size limit", async (t) => {
