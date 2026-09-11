@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { createApp } from "../server.js";
-import { createEntraAuth } from "../server/auth.js";
+import { createEntraAuth, type EntraIdentity } from "../server/auth.js";
 
 const plannerIdentity = {
   oid: "employee-1",
@@ -16,7 +16,7 @@ const plannerIdentity = {
 
 async function startMaintenanceApp(options: {
   verify?: () => Promise<typeof plannerIdentity>;
-  lookupEmployee?: () => Promise<{ id: string; name: string; mail: string; department?: string; accountEnabled: boolean } | undefined>;
+  lookupEmployee?: (identity: EntraIdentity) => Promise<{ id: string; name: string; mail: string; department?: string; accountEnabled: boolean } | undefined>;
   admins?: string[];
   planners?: string[];
   allowedDepartments?: string[];
@@ -106,21 +106,50 @@ test("auth status reports directory eligibility and local app role without turni
 });
 
 test("eligible admins can grant and revoke planner OID roles immediately", async () => {
-  const fixture = await startMaintenanceApp({ admins: [plannerIdentity.oid], planners: [] });
+  const plannerOid = "33333333-3333-4333-8333-333333333333";
+  const fixture = await startMaintenanceApp({
+    admins: [plannerIdentity.oid],
+    planners: [],
+    lookupEmployee: async (identity) => identity.oid === plannerOid
+      ? { id: plannerOid, name: "Planner User", mail: "planner@example.com", accountEnabled: true }
+      : { id: "employee-1", name: "Assembly - Planner", mail: "planner@example.com", department: "Assembly", accountEnabled: true }
+  });
   try {
     const headers = { authorization: "Bearer valid", "content-type": "application/json" };
     const before = await fixture.request("/api/admin/planners", { headers });
     assert.deepEqual(await before.json(), { planners: [] });
-    const plannerOid = "33333333-3333-4333-8333-333333333333";
     const granted = await fixture.request("/api/admin/planners", { method: "PUT", headers, body: JSON.stringify({ oid: plannerOid }) });
     assert.equal(granted.status, 200);
     assert.deepEqual(await granted.json(), { planners: [plannerOid] });
     const after = await fixture.request("/api/admin/planners", { headers });
-    assert.deepEqual(await after.json(), { planners: [plannerOid] });
+    assert.deepEqual(await after.json(), { planners: [{ oid: plannerOid, name: "Planner User", email: "planner@example.com" }] });
     const invalid = await fixture.request("/api/admin/planners", { method: "PUT", headers, body: JSON.stringify({ oid: "not-an-oid" }) });
     assert.equal(invalid.status, 400);
     const invalidPath = await fixture.request("/api/admin/planners/not-an-oid", { method: "DELETE", headers });
     assert.equal(invalidPath.status, 400);
+    const revoked = await fixture.request(`/api/admin/planners/${plannerOid}`, { method: "DELETE", headers });
+    assert.equal(revoked.status, 200);
+    assert.deepEqual(await revoked.json(), { planners: [] });
+  } finally { await fixture.close(); }
+});
+
+test("planner summaries retain revocable OIDs when directory lookup fails", async () => {
+  const plannerOid = "33333333-3333-4333-8333-333333333333";
+  const fixture = await startMaintenanceApp({
+    admins: [plannerIdentity.oid],
+    planners: [],
+    lookupEmployee: async (identity) => {
+      if (identity.oid === plannerOid) throw new Error("temporary directory failure");
+      return { id: "employee-1", name: "Assembly - Planner", mail: "planner@example.com", department: "Assembly", accountEnabled: true };
+    }
+  });
+  try {
+    const headers = { authorization: "Bearer valid", "content-type": "application/json" };
+    const granted = await fixture.request("/api/admin/planners", { method: "PUT", headers, body: JSON.stringify({ oid: plannerOid }) });
+    assert.equal(granted.status, 200);
+    const response = await fixture.request("/api/admin/planners", { headers });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { planners: [{ oid: plannerOid, name: null, email: null }] });
     const revoked = await fixture.request(`/api/admin/planners/${plannerOid}`, { method: "DELETE", headers });
     assert.equal(revoked.status, 200);
     assert.deepEqual(await revoked.json(), { planners: [] });

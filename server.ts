@@ -45,6 +45,7 @@ const employeeCacheTtlMs = (Number.isInteger(parsedEmployeeCacheTtlSeconds) && p
 const employeeCache = new Map<string, { employee: import("./server/auth.js").DirectoryEmployee; expiresAt: number; syncedAt: string }>();
 const directoryRefreshes = new Map<string, number>();
 type RoleConfig = { admins: string[]; planners: string[] };
+type PlannerSummary = { oid: string; name: string | null; email: string | null };
 function loadRoleConfig(): RoleConfig {
   if (!fs.existsSync(AUTH_FILE)) return { admins: [], planners: [] };
   try {
@@ -884,6 +885,17 @@ async function requireEligibleAdmin(req: express.Request): Promise<EntraIdentity
   return identity;
 }
 
+async function plannerSummary(oid: string): Promise<PlannerSummary> {
+  try {
+    const employee = await authDependencies.lookupEmployee({ oid, preferredUsername: "", name: "" });
+    return employee
+      ? { oid, name: employee.name, email: employee.mail }
+      : { oid, name: null, email: null };
+  } catch {
+    return { oid, name: null, email: null };
+  }
+}
+
 app.get("/api/admin/directory-search", async (req, res) => {
   try {
     await requireEligibleAdmin(req);
@@ -899,7 +911,8 @@ app.get("/api/admin/directory-search", async (req, res) => {
 app.get("/api/admin/planners", async (req, res) => {
   try {
     await requireEligibleAdmin(req);
-    res.json({ planners: roleConfig.planners });
+    const planners = await Promise.all(roleConfig.planners.map(plannerSummary));
+    res.json({ planners });
   } catch (error) {
     if (error instanceof AuthFailure) return sendAuthFailure(res, error);
     return sendAuthFailure(res, new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable."));
