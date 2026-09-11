@@ -3,84 +3,70 @@ import path from "path";
 import fs from "fs";
 import multer from "multer";
 import JSZip from "jszip";
-import crypto from "crypto";
 import { execSync } from "child_process";
-import { pathToFileURL } from "url";
+import { randomUUID } from "crypto";
 import { createServer as createViteServer } from "vite";
+import { AuthDependencies, AuthFailure, createEntraAuth, EntraIdentity } from "./server/auth.js";
 
 export interface CreateAppOptions {
-  dataDir?: string;
-  uploadsDir?: string;
+  dataDir: string;
+  uploadsDir: string;
+  auth?: AuthDependencies;
 }
 
-function defaultStorageOptions(): Required<CreateAppOptions> {
-  return {
-    dataDir: path.join(process.cwd(), "data"),
-    uploadsDir: path.join(process.cwd(), "uploads")
-  };
-}
+const appLifecycles = new WeakMap<express.Express, {
+  generateSeedDataIfEmpty: () => Promise<void>;
+  ensureSlidesParsed: () => Promise<void>;
+}>();
 
-function initializeProductionStorage(options: Required<CreateAppOptions>) {
-  const pptsDir = path.join(options.uploadsDir, "ppts");
-  const previewsDir = path.join(options.uploadsDir, "previews");
-  const authFile = path.join(options.dataDir, "auth.json");
-
-  for (const dir of [options.dataDir, options.uploadsDir, pptsDir, previewsDir]) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-
-  if (!fs.existsSync(authFile)) {
-    fs.writeFileSync(
-      authFile,
-      JSON.stringify({
-        username: "qihua",
-        passwordHash: crypto.createHash("sha256").update("qihua123").digest("hex")
-      }, null, 2)
-    );
-  }
-}
-
-export function createApp(options: CreateAppOptions = {}) {
-  return createAppContext(options).app;
-}
-
-function createAppContext(options: CreateAppOptions) {
+export function createApp(options: CreateAppOptions): express.Express {
 const app = express();
 
 // Directories
-const DATA_DIR = options.dataDir ?? path.join(process.cwd(), "data");
-const UPLOADS_DIR = options.uploadsDir ?? path.join(process.cwd(), "uploads");
+const DATA_DIR = options.dataDir;
+const UPLOADS_DIR = options.uploadsDir;
 const PPTS_DIR = path.join(UPLOADS_DIR, "ppts");
 const PREVIEWS_DIR = path.join(UPLOADS_DIR, "previews");
 const DB_FILE = path.join(DATA_DIR, "ppts.json");
 const AUTH_FILE = path.join(DATA_DIR, "auth.json");
 
-// Default planner credentials
-let authConfig = {
-  username: "qihua",
-  passwordHash: crypto.createHash("sha256").update("qihua123").digest("hex"),
-  activeTokens: new Set<string>()
-};
-
-if (fs.existsSync(AUTH_FILE)) {
-  try {
-    const raw = JSON.parse(fs.readFileSync(AUTH_FILE, "utf-8"));
-    authConfig.username = raw.username || "qihua";
-    authConfig.passwordHash = raw.passwordHash || authConfig.passwordHash;
-  } catch (e) {
-    console.error("Failed to read auth.json:", e);
+// Ensure directories exist
+for (const dir of [DATA_DIR, UPLOADS_DIR, PPTS_DIR, PREVIEWS_DIR]) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
   }
 }
+
+const authDependencies = options.auth ?? createEntraAuth();
+const parsedEmployeeCacheTtlSeconds = Number.parseInt(process.env.EMPLOYEE_CACHE_TTL_SECONDS ?? "", 10);
+const employeeCacheTtlMs = (Number.isInteger(parsedEmployeeCacheTtlSeconds) && parsedEmployeeCacheTtlSeconds >= 0
+  ? parsedEmployeeCacheTtlSeconds
+  : 3600) * 1000;
+const employeeCache = new Map<string, { employee: import("./server/auth.js").DirectoryEmployee; expiresAt: number; syncedAt: string }>();
+const directoryRefreshes = new Map<string, number>();
+type RoleConfig = { admins: string[]; planners: string[] };
+function loadRoleConfig(): RoleConfig {
+  if (!fs.existsSync(AUTH_FILE)) return { admins: [], planners: [] };
+  try {
+    const raw: unknown = JSON.parse(fs.readFileSync(AUTH_FILE, "utf-8"));
+    if (raw && typeof raw === "object") {
+      const config = raw as { admins?: unknown; planners?: unknown };
+      if (Array.isArray(config.admins) && Array.isArray(config.planners)
+        && config.admins.every(value => typeof value === "string") && config.planners.every(value => typeof value === "string")) {
+        return { admins: config.admins, planners: config.planners };
+      }
+    }
+  } catch {
+    console.error("Failed to read auth.json roles.");
+  }
+  return { admins: [], planners: [] };
+}
+let roleConfig: RoleConfig = loadRoleConfig();
 
 // Multer storage for PPT files
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    try {
-      fs.mkdirSync(PPTS_DIR, { recursive: true });
-      cb(null, PPTS_DIR);
-    } catch (error) {
-      cb(error as Error, PPTS_DIR);
-    }
+    cb(null, PPTS_DIR);
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
@@ -151,7 +137,6 @@ function getPPTs(): StoredPPT[] {
 }
 
 function savePPTs(items: StoredPPT[]) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(DB_FILE, JSON.stringify(items, null, 2), "utf-8");
 }
 
@@ -710,83 +695,254 @@ async function generateSeedDataIfEmpty() {
   console.log("Sample PPTs created successfully.");
 }
 
-// Authentication middleware for 企划
-function requirePlanner(req: express.Request, res: express.Response, next: express.NextFunction) {
+function sendAuthFailure(res: express.Response, failure: AuthFailure) {
+  return res.status(failure.status).json({ code: failure.code, message: failure.message });
+}
+
+function isListed(values: string[], identity: EntraIdentity) {
+  return values.some(value => value === identity.oid);
+}
+
+function bootstrapAdmins() {
+  return (process.env.SUPER_USER_EMAILS ?? "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean);
+}
+
+function appRole(identity: EntraIdentity): "admin" | "planner" | "reader" {
+  roleConfig = loadRoleConfig();
+  if (isListed(roleConfig.admins, identity) || bootstrapAdmins().includes(identity.preferredUsername.toLowerCase())) return "admin";
+  return isListed(roleConfig.planners, identity) ? "planner" : "reader";
+}
+
+const ROLE_LOCK_RETRIES = 25;
+const ROLE_LOCK_RETRY_MS = 20;
+const STALE_ROLE_LOCK_MS = 5_000;
+
+function pause(ms: number) {
+  return new Promise<void>(resolve => setTimeout(resolve, ms));
+}
+
+async function reclaimStaleRoleLock(lockFile: string): Promise<boolean> {
+  let record: { timestamp?: unknown; token?: unknown };
+  try {
+    record = JSON.parse(await fs.promises.readFile(lockFile, "utf-8")) as { timestamp?: unknown; token?: unknown };
+  } catch {
+    return false;
+  }
+  if (typeof record.timestamp !== "number" || typeof record.token !== "string" || Date.now() - record.timestamp < STALE_ROLE_LOCK_MS) return false;
+  const quarantinedLock = `${lockFile}.stale.${randomUUID()}`;
+  try {
+    await fs.promises.rename(lockFile, quarantinedLock);
+    await fs.promises.unlink(quarantinedLock);
+    return true;
+  } catch {
+    await fs.promises.unlink(quarantinedLock).catch(() => undefined);
+    return false;
+  }
+}
+
+async function ownsRoleLock(lockFile: string, token: string): Promise<boolean> {
+  try {
+    const record = JSON.parse(await fs.promises.readFile(lockFile, "utf-8")) as { token?: unknown };
+    return record.token === token;
+  } catch {
+    return false;
+  }
+}
+
+async function assertRoleLockOwnership(lockFile: string, token: string) {
+  if (await ownsRoleLock(lockFile, token)) return;
+  // The lock was reclaimed or otherwise lost before this writer could commit.
+  throw new AuthFailure(503, "ROLE_UPDATE_UNAVAILABLE", "Role configuration is temporarily unavailable.");
+}
+
+async function mutateRoleConfig(mutator: (current: RoleConfig) => RoleConfig): Promise<RoleConfig> {
+  const lockFile = `${AUTH_FILE}.lock`;
+  let lock: fs.promises.FileHandle | undefined;
+  let temporaryFile: string | undefined;
+  const lockToken = randomUUID();
+  try {
+    for (let attempt = 0; attempt < ROLE_LOCK_RETRIES; attempt++) {
+      try {
+        lock = await fs.promises.open(lockFile, "wx");
+        await lock.writeFile(JSON.stringify({ pid: process.pid, timestamp: Date.now(), token: lockToken }), "utf-8");
+        break;
+      } catch (error) {
+        if (!(error && typeof error === "object" && (error as NodeJS.ErrnoException).code === "EEXIST")) throw error;
+        if (await reclaimStaleRoleLock(lockFile)) continue;
+        await pause(ROLE_LOCK_RETRY_MS);
+      }
+    }
+    if (!lock) throw new AuthFailure(503, "ROLE_UPDATE_UNAVAILABLE", "Role configuration is temporarily unavailable.");
+    const next = mutator(loadRoleConfig());
+    temporaryFile = `${AUTH_FILE}.${process.pid}.${Date.now()}.tmp`;
+    await fs.promises.writeFile(temporaryFile, JSON.stringify(next, null, 2), "utf-8");
+    await assertRoleLockOwnership(lockFile, lockToken);
+    await fs.promises.rename(temporaryFile, AUTH_FILE);
+    temporaryFile = undefined;
+    roleConfig = next;
+    return next;
+  } catch (error) {
+    if (error instanceof AuthFailure) throw error;
+    throw new AuthFailure(503, "ROLE_UPDATE_UNAVAILABLE", "Role configuration is temporarily unavailable.");
+  } finally {
+    if (temporaryFile) await fs.promises.unlink(temporaryFile).catch(() => undefined);
+    if (lock) await lock.close().catch(() => undefined);
+    if (lock && await ownsRoleLock(lockFile, lockToken)) await fs.promises.unlink(lockFile).catch(() => undefined);
+  }
+}
+
+function canonicalOid(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const oid = value.trim().toLowerCase();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(oid) ? oid : undefined;
+}
+
+async function requireIdentity(req: express.Request): Promise<EntraIdentity> {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "需要企划账号权限，请先登录企划账号" });
+  if (!authHeader?.startsWith("Bearer ")) throw new AuthFailure(401, "UNAUTHORIZED", "Authentication is required.");
+  const token = authHeader.slice("Bearer ".length).trim();
+  if (!token) throw new AuthFailure(401, "UNAUTHORIZED", "Authentication is required.");
+  try {
+    return await authDependencies.verifyAccessToken(token);
+  } catch (error) {
+    if (error instanceof AuthFailure) throw error;
+    if (error && typeof error === "object" && (error as { code?: unknown }).code === "INSUFFICIENT_SCOPE") {
+      throw new AuthFailure(403, "INSUFFICIENT_SCOPE", "The access_as_user scope is required.");
+    }
+    throw new AuthFailure(401, "UNAUTHORIZED", "The access token is invalid.");
   }
-  const token = authHeader.split(" ")[1];
-  if (!authConfig.activeTokens.has(token)) {
-    return res.status(401).json({ error: "登录凭证已过期或无效，请重新登录" });
+}
+
+async function findEmployee(identity: EntraIdentity, force = false) {
+  const cached = employeeCache.get(identity.oid);
+  if (!force && cached && cached.expiresAt > Date.now()) return cached;
+  const found = await authDependencies.lookupEmployee(identity);
+  if (!found) return undefined;
+  const entry = { employee: found, expiresAt: Date.now() + employeeCacheTtlMs, syncedAt: new Date().toISOString() };
+  if (employeeCacheTtlMs > 0) employeeCache.set(identity.oid, entry);
+  return entry;
+}
+
+function qualification(employee: import("./server/auth.js").DirectoryEmployee | undefined): { allowed: boolean; reason: string | null; department: string | null } {
+  if (!employee) return { allowed: false, reason: "NOT_IN_DIRECTORY", department: null };
+  if (!employee.accountEnabled) return { allowed: false, reason: "ACCOUNT_DISABLED", department: employee.department?.trim() || employee.name.split("-", 1)[0].trim() || null };
+  const department = employee.department?.trim() || employee.name.split("-", 1)[0].trim() || null;
+  const allowedDepartments = authDependencies.allowedDepartments ?? [];
+  if (allowedDepartments.length > 0 && (!department || !allowedDepartments.includes(department))) return { allowed: false, reason: "DEPARTMENT_NOT_ALLOWED", department };
+  return { allowed: true, reason: null, department };
+}
+
+async function requirePlanner(req: express.Request, res: express.Response, next: express.NextFunction) {
+  try {
+    const identity = await requireIdentity(req);
+    const entry = await findEmployee(identity);
+    const access = qualification(entry?.employee);
+    if (!access.allowed) throw new AuthFailure(403, access.reason!, "The signed-in user is not eligible for access.");
+    if (appRole(identity) === "reader") {
+      throw new AuthFailure(403, "ROLE_NOT_ALLOWED", "Planner or admin role is required.");
+    }
+    res.locals.identity = identity;
+    next();
+  } catch (error) {
+    if (error instanceof AuthFailure) return sendAuthFailure(res, error);
+    return sendAuthFailure(res, new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable."));
   }
-  next();
 }
 
 // ---------------- API Routes ----------------
 
+app.get("/api/auth/me", async (req, res) => {
+  try {
+    const identity = await requireIdentity(req);
+    const entry = await findEmployee(identity);
+    const directory = qualification(entry?.employee);
+    const role = appRole(identity);
+    const allowed = directory.allowed && role !== "reader";
+    res.json({
+      authenticated: true,
+      identity: { oid: identity.oid, email: identity.preferredUsername, name: identity.name },
+      directory: {
+        found: Boolean(entry),
+        accountEnabled: entry?.employee.accountEnabled ?? false,
+        department: directory.department,
+        syncedAt: entry?.syncedAt ?? null
+      },
+      access: { allowed, reason: allowed ? null : directory.reason ?? "ROLE_NOT_ALLOWED" },
+      app: { role }
+    });
+  } catch (error) {
+    if (error instanceof AuthFailure) return sendAuthFailure(res, error);
+    return sendAuthFailure(res, new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable."));
+  }
+});
+
+async function requireEligibleAdmin(req: express.Request): Promise<EntraIdentity> {
+  const identity = await requireIdentity(req);
+  const entry = await findEmployee(identity);
+  const access = qualification(entry?.employee);
+  if (!access.allowed || appRole(identity) !== "admin") throw new AuthFailure(403, "INSUFFICIENT_ROLE", "Admin role is required.");
+  return identity;
+}
+
+app.get("/api/admin/planners", async (req, res) => {
+  try {
+    await requireEligibleAdmin(req);
+    res.json({ planners: roleConfig.planners });
+  } catch (error) {
+    if (error instanceof AuthFailure) return sendAuthFailure(res, error);
+    return sendAuthFailure(res, new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable."));
+  }
+});
+
+app.put("/api/admin/planners", async (req, res) => {
+  try {
+    await requireEligibleAdmin(req);
+    const oid = canonicalOid(req.body?.oid);
+    if (!oid) return res.status(400).json({ code: "INVALID_REQUEST", message: "oid must be a canonical UUID v4." });
+    const next = await mutateRoleConfig(current => current.planners.includes(oid)
+      ? current
+      : { ...current, planners: [...current.planners, oid] });
+    res.json({ planners: next.planners });
+  } catch (error) {
+    if (error instanceof AuthFailure) return sendAuthFailure(res, error);
+    return sendAuthFailure(res, new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable."));
+  }
+});
+
+app.delete("/api/admin/planners/:oid", async (req, res) => {
+  try {
+    await requireEligibleAdmin(req);
+    const oid = canonicalOid(req.params.oid);
+    if (!oid) return res.status(400).json({ code: "INVALID_REQUEST", message: "oid must be a canonical UUID v4." });
+    const next = await mutateRoleConfig(current => ({ ...current, planners: current.planners.filter(value => value !== oid) }));
+    res.json({ planners: next.planners });
+  } catch (error) {
+    if (error instanceof AuthFailure) return sendAuthFailure(res, error);
+    return sendAuthFailure(res, new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable."));
+  }
+});
+
+app.post("/api/directory/refresh", async (req, res) => {
+  try {
+    const identity = await requireIdentity(req);
+    const previousRefresh = directoryRefreshes.get(identity.oid) ?? 0;
+    if (Date.now() - previousRefresh < 60_000) throw new AuthFailure(429, "RATE_LIMITED", "Directory refresh is limited to once per minute.");
+    directoryRefreshes.set(identity.oid, Date.now());
+    if (!authDependencies.refreshDirectory) throw new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable.");
+    const refresh = await authDependencies.refreshDirectory();
+    employeeCache.delete(identity.oid);
+    const entry = await findEmployee(identity, true);
+    const directory = qualification(entry?.employee);
+    res.json({ refreshed: true, syncedAt: refresh.syncedAt, recordCount: refresh.recordCount, me: { found: Boolean(entry), accountEnabled: entry?.employee.accountEnabled ?? false, department: directory.department } });
+  } catch (error) {
+    if (error instanceof AuthFailure) return sendAuthFailure(res, error);
+    return sendAuthFailure(res, new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable."));
+  }
+});
+
 // Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", time: new Date().toISOString() });
-});
-
-// Auth endpoints
-app.post("/api/auth/login", (req, res) => {
-  const { username, password } = req.body;
-  const hash = crypto.createHash("sha256").update(password || "").digest("hex");
-
-  if (username === authConfig.username && hash === authConfig.passwordHash) {
-    const token = crypto.randomBytes(32).toString("hex");
-    authConfig.activeTokens.add(token);
-    return res.json({
-      success: true,
-      token,
-      username: authConfig.username,
-      role: "planner",
-      message: "企划账号登录成功"
-    });
-  }
-
-  return res.status(401).json({ success: false, error: "企划账号或密码错误 (默认账号: qihua / 密码: qihua123)" });
-});
-
-app.post("/api/auth/check", (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.split(" ")[1];
-    if (authConfig.activeTokens.has(token)) {
-      return res.json({ valid: true, username: authConfig.username, role: "planner" });
-    }
-  }
-  res.json({ valid: false, role: "guest" });
-});
-
-app.post("/api/auth/logout", (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.split(" ")[1];
-    authConfig.activeTokens.delete(token);
-  }
-  res.json({ success: true });
-});
-
-app.post("/api/auth/change-password", requirePlanner, (req, res) => {
-  const { oldPassword, newPassword } = req.body;
-  const oldHash = crypto.createHash("sha256").update(oldPassword || "").digest("hex");
-  if (oldHash !== authConfig.passwordHash) {
-    return res.status(400).json({ error: "原密码不正确" });
-  }
-  if (!newPassword || newPassword.length < 4) {
-    return res.status(400).json({ error: "新密码长度至少4位" });
-  }
-  const newHash = crypto.createHash("sha256").update(newPassword).digest("hex");
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(
-    AUTH_FILE,
-    JSON.stringify({ username: authConfig.username, passwordHash: newHash }, null, 2)
-  );
-  authConfig.passwordHash = newHash;
-  res.json({ success: true, message: "密码修改成功" });
 });
 
 // PPT listing - Open to ALL employees without login
@@ -973,7 +1129,7 @@ app.post("/api/ppts", requirePlanner, upload.single("file"), async (req, res) =>
       fileUrl: `/api/ppts/${id}/download`,
       category: category || "生产线平衡与节拍改善",
       version: version?.trim() || "v1.0",
-      uploader: authConfig.username === "qihua" ? "企划部" : authConfig.username,
+      uploader: (res.locals.identity as EntraIdentity).name,
       uploadDate: dateStr,
       updateDate: dateStr,
       description: description?.trim() || "发布的生产线平衡改善案例PPT文档",
@@ -1059,17 +1215,21 @@ app.delete("/api/ppts/:id", requirePlanner, (req, res) => {
   res.json({ success: true, message: `PPT《${removed.title}》已成功删除` });
 });
 
-  return { app, ensureSlidesParsed, generateSeedDataIfEmpty };
+  appLifecycles.set(app, { generateSeedDataIfEmpty, ensureSlidesParsed });
+  return app;
 }
 
 // ---------------- Production & Vite Dev Middleware ----------------
 
-async function startServer() {
-  const storageOptions = defaultStorageOptions();
-  initializeProductionStorage(storageOptions);
-  const { app, generateSeedDataIfEmpty, ensureSlidesParsed } = createAppContext(storageOptions);
-  await generateSeedDataIfEmpty();
-  await ensureSlidesParsed();
+export async function startServer() {
+  const app = createApp({
+    dataDir: path.join(process.cwd(), "data"),
+    uploadsDir: path.join(process.cwd(), "uploads")
+  });
+  const lifecycle = appLifecycles.get(app);
+  if (!lifecycle) throw new Error("Server lifecycle was not initialized");
+  await lifecycle.generateSeedDataIfEmpty();
+  await lifecycle.ensureSlidesParsed();
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -1090,13 +1250,8 @@ async function startServer() {
   });
 }
 
-const isEsmEntrypoint = process.argv[1] !== undefined
-  && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
-const isCommonJsEntrypoint = typeof require !== "undefined"
-  && typeof module !== "undefined"
-  && require.main === module;
-
-if (isEsmEntrypoint || isCommonJsEntrypoint) {
+const isDirectServerExecution = ["server.ts", "server.cjs"].includes(path.basename(process.argv[1] ?? ""));
+if (isDirectServerExecution) {
   startServer().catch((err) => {
     console.error("Failed to start server:", err);
   });

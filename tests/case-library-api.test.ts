@@ -137,75 +137,7 @@ test("case-library API serves isolated case data over HTTP", async (t) => {
   );
 });
 
-test("authenticated upload lazily creates isolated storage", async (t) => {
-  const tempDir = await mkdtemp(path.join(tmpdir(), "case-library-upload-"));
-  const dataDir = path.join(tempDir, "data");
-  const uploadsDir = path.join(tempDir, "uploads");
-  let server: Server | undefined;
-
-  t.after(async () => {
-    await new Promise<void>((resolve, reject) => {
-      if (!server?.listening) {
-        resolve();
-        return;
-      }
-      server.close((error) => error ? reject(error) : resolve());
-    });
-    await rm(tempDir, { recursive: true, force: true });
-  });
-
-  server = createServer(createApp({ dataDir, uploadsDir }));
-  await assert.rejects(access(dataDir));
-  await assert.rejects(access(uploadsDir));
-
-  await new Promise<void>((resolve, reject) => {
-    server!.once("error", reject);
-    server!.listen(0, "127.0.0.1", resolve);
-  });
-  const address = server.address();
-  assert.ok(address && typeof address !== "string");
-  const baseUrl = `http://127.0.0.1:${address.port}`;
-
-  const login = await fetch(`${baseUrl}/api/auth/login`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ username: "qihua", password: "qihua123" })
-  });
-  assert.equal(login.status, 200);
-  const { token } = await login.json() as { token: string };
-  assert.ok(token);
-
-  const pptBytes = Buffer.from("minimal legacy ppt fixture");
-  const form = new FormData();
-  form.set("title", "Uploaded isolated case");
-  form.set("file", new Blob([pptBytes], { type: "application/vnd.ms-powerpoint" }), "isolated-case.ppt");
-
-  const upload = await fetch(`${baseUrl}/api/ppts`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${token}` },
-    body: form
-  });
-  const uploadBody = await upload.text();
-  assert.equal(upload.status, 200, uploadBody);
-  const result = JSON.parse(uploadBody) as {
-    success: boolean;
-    ppt: { id: string; storedFileName: string; title: string };
-  };
-  assert.equal(result.success, true);
-  assert.equal(result.ppt.title, "Uploaded isolated case");
-
-  const persistedCases: { id: string; storedFileName: string }[] = JSON.parse(
-    await readFile(path.join(dataDir, "ppts.json"), "utf8")
-  );
-  assert.equal(persistedCases[0]?.id, result.ppt.id);
-  assert.equal(persistedCases[0]?.storedFileName, result.ppt.storedFileName);
-  assert.deepEqual(
-    await readFile(path.join(uploadsDir, "ppts", result.ppt.storedFileName)),
-    pptBytes
-  );
-});
-
-test("password change lazily persists isolated auth for a fresh app", async (t) => {
+test("removed local password endpoints do not recreate auth storage", async (t) => {
   const tempDir = await mkdtemp(path.join(tmpdir(), "case-library-auth-"));
   const dataDir = path.join(tempDir, "data");
   const uploadsDir = path.join(tempDir, "uploads");
@@ -237,57 +169,20 @@ test("password change lazily persists isolated auth for a fresh app", async (t) 
   };
 
   const firstApp = await startApp();
-  await assert.rejects(access(dataDir));
-  await assert.rejects(access(uploadsDir));
 
   const login = await fetch(`${firstApp.baseUrl}/api/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ username: "qihua", password: "qihua123" })
   });
-  assert.equal(login.status, 200);
-  const { token } = await login.json() as { token: string };
-
-  const changePassword = await fetch(`${firstApp.baseUrl}/api/auth/change-password`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json"
-    },
-    body: JSON.stringify({
-      oldPassword: "qihua123",
-      newPassword: "isolated-new-password"
-    })
-  });
-  const changePasswordBody = await changePassword.text();
-  assert.equal(changePassword.status, 200, changePasswordBody);
-  assert.equal(JSON.parse(changePasswordBody).success, true);
-
-  assert.deepEqual(
-    JSON.parse(await readFile(path.join(dataDir, "auth.json"), "utf8")),
-    {
-      username: "qihua",
-      passwordHash: "14fec77aaa48f0bafcb85e4b20ee8ac6ccc99d64334acc343809a41855a771df"
-    }
-  );
-  await assert.rejects(access(uploadsDir));
+  assert.equal(login.status, 404);
+  await assert.rejects(access(path.join(dataDir, "auth.json")));
 
   await new Promise<void>((resolve, reject) => {
     firstApp.server.close((error) => error ? reject(error) : resolve());
   });
 
   const freshApp = await startApp();
-  const oldPasswordLogin = await fetch(`${freshApp.baseUrl}/api/auth/login`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ username: "qihua", password: "qihua123" })
-  });
-  assert.equal(oldPasswordLogin.status, 401);
-
-  const newPasswordLogin = await fetch(`${freshApp.baseUrl}/api/auth/login`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ username: "qihua", password: "isolated-new-password" })
-  });
-  assert.equal(newPasswordLogin.status, 200);
+  const freshLogin = await fetch(`${freshApp.baseUrl}/api/auth/login`, { method: "POST" });
+  assert.equal(freshLogin.status, 404);
 });

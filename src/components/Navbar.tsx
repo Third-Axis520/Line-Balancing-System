@@ -6,7 +6,6 @@ import {
   LogOut, 
   ShieldCheck, 
   UserCheck, 
-  KeyRound,
   Layers,
   Sparkles
 } from 'lucide-react';
@@ -17,7 +16,6 @@ interface NavbarProps {
   onOpenLogin: () => void;
   onOpenUpload: () => void;
   onLogout: () => void;
-  onOpenPasswordModal: () => void;
   totalPPTs: number;
 }
 
@@ -26,10 +24,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenLogin,
   onOpenUpload,
   onLogout,
-  onOpenPasswordModal,
   totalPPTs,
 }) => {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const canMaintain = auth.role === 'admin' || auth.role === 'planner';
 
   return (
     <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 text-slate-100 transition-all">
@@ -52,7 +50,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Right Action Controls */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            {auth.isAuthenticated ? (
+            {canMaintain ? (
               // Planner Logged In Mode
               <div className="flex items-center gap-2">
                 <button
@@ -90,22 +88,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                         <button
                           onClick={() => {
                             setShowProfileMenu(false);
-                            onOpenPasswordModal();
-                          }}
-                          className="w-full text-left px-3.5 py-2.5 text-slate-200 hover:bg-slate-800 hover:text-white flex items-center gap-2.5 transition-colors"
-                        >
-                          <KeyRound className="w-4 h-4 text-slate-400" />
-                          <span>修改企划密码</span>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setShowProfileMenu(false);
                             onLogout();
                           }}
                           className="w-full text-left px-3.5 py-2.5 text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 flex items-center gap-2.5 transition-colors border-t border-slate-800"
                         >
                           <LogOut className="w-4 h-4" />
-                          <span>退出企划登录</span>
+                          <span>退出登录</span>
                         </button>
                       </div>
                     </>

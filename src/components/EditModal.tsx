@@ -1,15 +1,15 @@
 import React, { useState } from 'react';
 import { X, Edit3, Save, AlertCircle, Loader2 } from 'lucide-react';
 import { PPTItem } from '../types';
+import { callApi } from '../auth/api';
 
 interface EditModalProps {
   ppt: PPTItem;
   onClose: () => void;
   onSuccess: (updatedPPT: PPTItem, message: string) => void;
-  token?: string;
 }
 
-export const EditModal: React.FC<EditModalProps> = ({ ppt, onClose, onSuccess, token }) => {
+export const EditModal: React.FC<EditModalProps> = ({ ppt, onClose, onSuccess }) => {
   const [title, setTitle] = useState(ppt.title);
   const [description, setDescription] = useState(ppt.description || '');
   const [isPinned, setIsPinned] = useState(Boolean(ppt.isPinned));
@@ -28,11 +28,10 @@ export const EditModal: React.FC<EditModalProps> = ({ ppt, onClose, onSuccess, t
     setErrorMessage('');
 
     try {
-      const res = await fetch(`/api/ppts/${ppt.id}`, {
+      const res = await callApi(`/api/ppts/${ppt.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           title: title.trim(),

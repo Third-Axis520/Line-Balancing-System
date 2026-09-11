@@ -5,16 +5,17 @@ import {
   ArrowUpDown,
   FolderOpen
 } from 'lucide-react';
-import { PPTItem, AuthState } from './types';
+import { PPTItem } from './types';
 import { Navbar } from './components/Navbar';
 import { PPTCard } from './components/PPTCard';
 import { PPTDetailModal } from './components/PPTDetailModal';
 import { UploadModal } from './components/UploadModal';
 import { EditModal } from './components/EditModal';
-import { LoginModal, PasswordModal } from './components/LoginModal';
 import { QRCodeModal } from './components/QRCodeModal';
 import { DeleteConfirmModal } from './components/DeleteConfirmModal';
 import { ToastContainer, ToastMessage } from './components/Toast';
+import { callApi } from './auth/api';
+import { useAuth } from './auth/AuthProvider';
 
 export default function App() {
   const [ppts, setPpts] = useState<PPTItem[]>([]);
@@ -24,13 +25,8 @@ export default function App() {
   const [sortOption, setSortOption] = useState<'default' | 'downloads' | 'size' | 'images'>('default');
   const fetchRequestId = useRef(0);
 
-  // Auth State
-  const [auth, setAuth] = useState<AuthState>({
-    isAuthenticated: false,
-    username: '',
-    role: 'guest',
-    token: undefined,
-  });
+  const auth = useAuth();
+  const canMaintain = auth.role === 'admin' || auth.role === 'planner';
 
   // Modals
   const [selectedPPTForDetail, setSelectedPPTForDetail] = useState<PPTItem | null>(null);
@@ -38,8 +34,6 @@ export default function App() {
   const [selectedPPTForEdit, setSelectedPPTForEdit] = useState<PPTItem | null>(null);
   const [selectedPPTForDelete, setSelectedPPTForDelete] = useState<PPTItem | null>(null);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
-  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
   // Toast feedback
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -52,33 +46,6 @@ export default function App() {
   const removeToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
-
-  // Check saved token on mount
-  useEffect(() => {
-    const savedToken = localStorage.getItem('qihua_token');
-    const savedUser = localStorage.getItem('qihua_user');
-    if (savedToken) {
-      fetch('/api/auth/check', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${savedToken}` },
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.valid) {
-            setAuth({
-              isAuthenticated: true,
-              username: data.username || savedUser || 'qihua',
-              role: 'planner',
-              token: savedToken,
-            });
-          } else {
-            localStorage.removeItem('qihua_token');
-            localStorage.removeItem('qihua_user');
-          }
-        })
-        .catch(() => {});
-    }
-  }, []);
 
   // Fetch PPTs
   const fetchPPTs = async (query = searchQuery) => {
@@ -121,40 +88,6 @@ export default function App() {
     void fetchPPTs();
   }, []);
 
-  // Login Handler
-  const handleLoginSuccess = (token: string, username: string) => {
-    localStorage.setItem('qihua_token', token);
-    localStorage.setItem('qihua_user', username);
-    setAuth({
-      isAuthenticated: true,
-      username,
-      role: 'planner',
-      token,
-    });
-    addToast('success', `企划人员 ${username} 已登录，具有上传/修改/删除权限`);
-  };
-
-  // Logout Handler
-  const handleLogout = async () => {
-    if (auth.token) {
-      try {
-        await fetch('/api/auth/logout', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${auth.token}` },
-        });
-      } catch {}
-    }
-    localStorage.removeItem('qihua_token');
-    localStorage.removeItem('qihua_user');
-    setAuth({
-      isAuthenticated: false,
-      username: '',
-      role: 'guest',
-      token: undefined,
-    });
-    addToast('info', '已退出企划账号，当前为现场员工模式');
-  };
-
   // Download Handler
   const handleDownload = (ppt: PPTItem) => {
     // Trigger download in browser
@@ -177,16 +110,14 @@ export default function App() {
 
   // Delete Handler (Planner only)
   const handleDeletePPT = async (ppt: PPTItem) => {
-    if (!auth.token) {
-      addToast('error', '请先登录企划管理账号以执行删除操作');
-      setIsLoginModalOpen(true);
+    if (!canMaintain) {
+      await auth.login();
       return;
     }
 
     try {
-      const res = await fetch(`/api/ppts/${ppt.id}`, {
+      const res = await callApi(`/api/ppts/${ppt.id}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${auth.token}` },
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -239,10 +170,9 @@ export default function App() {
       {/* Top Navbar */}
       <Navbar
         auth={auth}
-        onOpenLogin={() => setIsLoginModalOpen(true)}
+        onOpenLogin={auth.login}
         onOpenUpload={() => setIsUploadModalOpen(true)}
-        onLogout={handleLogout}
-        onOpenPasswordModal={() => setIsPasswordModalOpen(true)}
+        onLogout={auth.logout}
         totalPPTs={ppts.length}
       />
 
@@ -328,7 +258,7 @@ export default function App() {
               <PPTCard
                 key={ppt.id}
                 ppt={ppt}
-                isPlanner={auth.isAuthenticated}
+                isPlanner={canMaintain}
                 onView={(item) => setSelectedPPTForDetail(item)}
                 onDownload={handleDownload}
                 onOpenQRCode={(item) => setSelectedPPTForQR(item)}
@@ -376,7 +306,7 @@ export default function App() {
       {selectedPPTForDetail && (
         <PPTDetailModal
           ppt={selectedPPTForDetail}
-          isPlanner={auth.isAuthenticated}
+          isPlanner={canMaintain}
           onClose={() => setSelectedPPTForDetail(null)}
           onDownload={handleDownload}
           onOpenQRCode={(ppt) => setSelectedPPTForQR(ppt)}
@@ -411,7 +341,6 @@ export default function App() {
             addToast('success', msg);
             void fetchPPTs();
           }}
-          token={auth.token}
         />
       )}
 
@@ -423,22 +352,6 @@ export default function App() {
             addToast('success', msg);
             void fetchPPTs();
           }}
-          token={auth.token}
-        />
-      )}
-
-      {isLoginModalOpen && (
-        <LoginModal
-          onClose={() => setIsLoginModalOpen(false)}
-          onSuccess={handleLoginSuccess}
-        />
-      )}
-
-      {isPasswordModalOpen && (
-        <PasswordModal
-          onClose={() => setIsPasswordModalOpen(false)}
-          token={auth.token}
-          onSuccess={(msg) => addToast('success', msg)}
         />
       )}
 

@@ -10,14 +10,14 @@ import {
   Layers,
   Sparkles
 } from 'lucide-react';
+import { beginLogin, getAccessToken } from '../auth/api';
 
 interface UploadModalProps {
   onClose: () => void;
   onSuccess: (message: string) => void;
-  token?: string;
 }
 
-export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess, token }) => {
+export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess }) => {
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -59,7 +59,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess, to
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) {
       setErrorMessage('请先选择要上传的 PPT 文件');
@@ -69,6 +69,9 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess, to
       setErrorMessage('请输入 PPT 标题');
       return;
     }
+
+    const token = await getAccessToken();
+    if (!token) return;
 
     setIsUploading(true);
     setUploadProgress(10);
@@ -96,6 +99,10 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess, to
 
     xhr.onload = () => {
       setIsUploading(false);
+      if (xhr.status === 401) {
+        void beginLogin();
+        return;
+      }
       try {
         const res = JSON.parse(xhr.responseText);
         if (xhr.status >= 200 && xhr.status < 300 && res.success) {
