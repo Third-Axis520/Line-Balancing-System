@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -34,4 +34,114 @@ test("case publication rejects an unauthenticated upload over HTTP", async (t) =
   });
 
   assert.equal(response.status, 401);
+});
+
+const existingCase = {
+  id: "existing-case",
+  title: "装配线节拍改善",
+  originalFileName: "existing.ppt",
+  storedFileName: "existing.ppt",
+  fileSize: 1,
+  fileUrl: "/api/ppts/existing-case/download",
+  category: "fixture",
+  version: "v1",
+  uploader: "Fixture",
+  uploadDate: "2026-01-01 00:00",
+  updateDate: "2026-01-01 00:00",
+  description: "fixture",
+  imageCount: 0,
+  images: [],
+  downloadCount: 0,
+  tags: []
+};
+
+async function startPublicationApp(t: test.TestContext, maxUploadBytes?: number) {
+  const tempDir = await mkdtemp(path.join(tmpdir(), "case-publication-"));
+  const dataDir = path.join(tempDir, "data");
+  const uploadsDir = path.join(tempDir, "uploads");
+  await mkdir(dataDir, { recursive: true });
+  await writeFile(path.join(dataDir, "ppts.json"), JSON.stringify([existingCase]));
+  await writeFile(path.join(dataDir, "auth.json"), JSON.stringify({ admins: [], planners: ["planner-1"] }));
+  const server = createServer(createApp({
+    dataDir,
+    uploadsDir,
+    maxUploadBytes,
+    auth: {
+      verifyAccessToken: async () => ({ oid: "planner-1", preferredUsername: "planner@example.com", name: "Planner" }),
+      lookupEmployee: async () => ({ id: "planner-1", name: "Planner", mail: "planner@example.com", accountEnabled: true }),
+      searchEmployees: async () => []
+    }
+  }));
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  t.after(async () => {
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    await rm(tempDir, { recursive: true, force: true });
+  });
+  return {
+    dataDir,
+    uploadsDir,
+    request: (body: FormData) => fetch(`http://127.0.0.1:${address.port}/api/ppts`, {
+      method: "POST",
+      headers: { authorization: "Bearer planner-token" },
+      body
+    })
+  };
+}
+
+function uploadForm(fields: Record<string, string>, fileName = "case.ppt") {
+  const body = new FormData();
+  for (const [name, value] of Object.entries(fields)) body.set(name, value);
+  body.set("file", new Blob(["fixture presentation"]), fileName);
+  return body;
+}
+
+test("case publication validates uploaded case metadata and cleans rejected files", async (t) => {
+  const fixture = await startPublicationApp(t);
+
+  const unsupported = await fixture.request(uploadForm({ title: "Unsupported" }, "case.pdf"));
+  assert.equal(unsupported.status, 400);
+  assert.match((await unsupported.json()).error, /\.pptx.*\.ppt|\.ppt.*\.pptx/i);
+
+  const blankTitle = await fixture.request(uploadForm({ title: "   " }));
+  assert.equal(blankTitle.status, 400);
+
+  const duplicate = await fixture.request(uploadForm({ title: "装配线节拍改善" }, "duplicate.PPT"));
+  assert.equal(duplicate.status, 409);
+  assert.deepEqual(await duplicate.json(), {
+    error: "案例名称已存在，请选择替换现有案例或修改名称",
+    conflict: { id: "existing-case", title: "装配线节拍改善" }
+  });
+
+  const mismatchedReplacement = await fixture.request(uploadForm({ title: "装配线节拍改善", replaceCaseId: "other-case" }));
+  assert.equal(mismatchedReplacement.status, 409);
+  assert.deepEqual(await mismatchedReplacement.json(), {
+    error: "案例名称已存在，请选择替换现有案例或修改名称",
+    conflict: { id: "existing-case", title: "装配线节拍改善" }
+  });
+
+  assert.deepEqual(JSON.parse(await readFile(path.join(fixture.dataDir, "ppts.json"), "utf8")), [existingCase]);
+  assert.deepEqual(await readdir(path.join(fixture.uploadsDir, "ppts")), []);
+  assert.deepEqual(await readdir(path.join(fixture.uploadsDir, "previews")), []);
+});
+
+test("case publication cleans files and previews when PPTX parsing fails", async (t) => {
+  const fixture = await startPublicationApp(t);
+  const response = await fixture.request(uploadForm({ title: "Broken PPTX" }, "broken.pptx"));
+  assert.equal(response.status, 500);
+  assert.deepEqual(JSON.parse(await readFile(path.join(fixture.dataDir, "ppts.json"), "utf8")), [existingCase]);
+  assert.deepEqual(await readdir(path.join(fixture.uploadsDir, "ppts")), []);
+  assert.deepEqual(await readdir(path.join(fixture.uploadsDir, "previews")), []);
+});
+
+test("case publication enforces the configured upload size limit", async (t) => {
+  const fixture = await startPublicationApp(t, 8);
+  const response = await fixture.request(uploadForm({ title: "Too large" }, "large.ppt"));
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /200\s*MB|文件.*大小/i);
+  assert.deepEqual(await readdir(path.join(fixture.uploadsDir, "ppts")), []);
 });

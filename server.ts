@@ -12,6 +12,7 @@ export interface CreateAppOptions {
   dataDir: string;
   uploadsDir: string;
   auth?: AuthDependencies;
+  maxUploadBytes?: number;
 }
 
 const appLifecycles = new WeakMap<express.Express, {
@@ -79,9 +80,29 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   limits: {
-    fileSize: 200 * 1024 * 1024 // 200MB max for rich image PPTs
+    fileSize: options.maxUploadBytes ?? 200 * 1024 * 1024 // 200MB max for rich image PPTs
   }
 });
+
+function removeRejectedUpload(filePath?: string, previewId?: string) {
+  try {
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    if (previewId) fs.rmSync(path.join(PREVIEWS_DIR, previewId), { recursive: true, force: true });
+  } catch (error) {
+    console.error("Failed to clean up rejected upload:", error);
+  }
+}
+
+function uploadSinglePpt(req: express.Request, res: express.Response, next: express.NextFunction) {
+  upload.single("file")(req, res, (error: unknown) => {
+    if (!error) return next();
+    removeRejectedUpload(req.file?.path);
+    if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({ error: "上传文件大小不能超过 200 MB" });
+    }
+    return next(error);
+  });
+}
 
 // Middleware
 app.use(express.json({ limit: "50mb" }));
@@ -377,6 +398,7 @@ async function extractPptxContent(
     }
   } catch (err) {
     console.error("Error extracting PPTX content:", err);
+    throw err;
   }
 
   return {
@@ -1087,7 +1109,8 @@ app.get("/api/stats", (req, res) => {
 // ---------------- Planner Protected Routes ----------------
 
 // Upload new PPT (Planner only)
-app.post("/api/ppts", requirePlanner, upload.single("file"), async (req, res) => {
+app.post("/api/ppts", requirePlanner, uploadSinglePpt, async (req, res) => {
+  let id: string | undefined;
   try {
     if (!req.file) {
       return res.status(400).json({ error: "请选择要上传的PPT文件" });
@@ -1103,11 +1126,41 @@ app.post("/api/ppts", requirePlanner, upload.single("file"), async (req, res) =>
       isPinned
     } = req.body;
 
-    const id = `ppt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const originalFileName = req.file.originalname;
     const storedFileName = req.file.filename;
     const filePath = req.file.path;
     const fileSize = req.file.size;
+    const normalizedTitle = typeof title === "string" ? title.trim() : "";
+    const extension = path.extname(originalFileName).toLowerCase();
+
+    if (extension !== ".ppt" && extension !== ".pptx") {
+      removeRejectedUpload(filePath);
+      return res.status(400).json({ error: "仅支持 .pptx 或 .ppt 格式的PPT文件" });
+    }
+    if (!normalizedTitle) {
+      removeRejectedUpload(filePath);
+      return res.status(400).json({ error: "案例名称不能为空" });
+    }
+    if (fileSize > (options.maxUploadBytes ?? 200 * 1024 * 1024)) {
+      removeRejectedUpload(filePath);
+      return res.status(400).json({ error: "上传文件大小不能超过 200 MB" });
+    }
+
+    const ppts = getPPTs();
+    const conflict = ppts.find(ppt => ppt.title.trim() === normalizedTitle);
+    if (conflict) {
+      removeRejectedUpload(filePath);
+      return res.status(409).json({
+        error: "案例名称已存在，请选择替换现有案例或修改名称",
+        conflict: { id: conflict.id, title: conflict.title }
+      });
+    }
+    if (typeof req.body.replaceCaseId === "string" && req.body.replaceCaseId.trim()) {
+      removeRejectedUpload(filePath);
+      return res.status(400).json({ error: "替换目标必须与同名冲突案例一致" });
+    }
+
+    id = `ppt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
     // Extract full slide content and images if PPTX
     let contentInfo = { images: [] as string[], slideCount: 1, slides: [] as StoredPPTSlide[] };
@@ -1147,7 +1200,7 @@ app.post("/api/ppts", requirePlanner, upload.single("file"), async (req, res) =>
 
     const newPPT: StoredPPT = {
       id,
-      title: title?.trim() || originalFileName.replace(/\.[^/.]+$/, ""),
+      title: normalizedTitle,
       originalFileName,
       storedFileName,
       fileSize,
@@ -1168,7 +1221,6 @@ app.post("/api/ppts", requirePlanner, upload.single("file"), async (req, res) =>
       tags: parsedTags.length > 0 ? parsedTags : ["线平衡改善", "工时优化"]
     };
 
-    const ppts = getPPTs();
     ppts.unshift(newPPT);
     savePPTs(ppts);
 
@@ -1179,6 +1231,7 @@ app.post("/api/ppts", requirePlanner, upload.single("file"), async (req, res) =>
     });
   } catch (err: any) {
     console.error("Upload failed:", err);
+    removeRejectedUpload(req.file?.path, id);
     res.status(500).json({ error: `上传失败: ${err.message || "服务器内部错误"}` });
   }
 });
