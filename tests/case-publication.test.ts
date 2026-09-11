@@ -138,6 +138,19 @@ test("case publication cleans files and previews when PPTX parsing fails", async
   assert.deepEqual(await readdir(path.join(fixture.uploadsDir, "previews")), []);
 });
 
+test("case publication rejects a non-string replacement target without persisting files", async (t) => {
+  const fixture = await startPublicationApp(t);
+  const body = uploadForm({ title: "Unique case" });
+  body.append("replaceCaseId", "existing-case");
+  body.append("replaceCaseId", "other-case");
+
+  const response = await fixture.request(body);
+  assert.equal(response.status, 400);
+  assert.deepEqual(JSON.parse(await readFile(path.join(fixture.dataDir, "ppts.json"), "utf8")), [existingCase]);
+  assert.deepEqual(await readdir(path.join(fixture.uploadsDir, "ppts")), []);
+  assert.deepEqual(await readdir(path.join(fixture.uploadsDir, "previews")), []);
+});
+
 test("case publication enforces the configured upload size limit", async (t) => {
   const fixture = await startPublicationApp(t, 8);
   const response = await fixture.request(uploadForm({ title: "Too large" }, "large.ppt"));

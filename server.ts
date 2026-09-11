@@ -1132,6 +1132,7 @@ app.post("/api/ppts", requirePlanner, uploadSinglePpt, async (req, res) => {
     const fileSize = req.file.size;
     const normalizedTitle = typeof title === "string" ? title.trim() : "";
     const extension = path.extname(originalFileName).toLowerCase();
+    const replaceCaseId = req.body.replaceCaseId;
 
     if (extension !== ".ppt" && extension !== ".pptx") {
       removeRejectedUpload(filePath);
@@ -1140,6 +1141,10 @@ app.post("/api/ppts", requirePlanner, uploadSinglePpt, async (req, res) => {
     if (!normalizedTitle) {
       removeRejectedUpload(filePath);
       return res.status(400).json({ error: "案例名称不能为空" });
+    }
+    if (replaceCaseId !== undefined && typeof replaceCaseId !== "string") {
+      removeRejectedUpload(filePath);
+      return res.status(400).json({ error: "替换目标格式无效" });
     }
     if (fileSize > (options.maxUploadBytes ?? 200 * 1024 * 1024)) {
       removeRejectedUpload(filePath);
@@ -1155,7 +1160,7 @@ app.post("/api/ppts", requirePlanner, uploadSinglePpt, async (req, res) => {
         conflict: { id: conflict.id, title: conflict.title }
       });
     }
-    if (typeof req.body.replaceCaseId === "string" && req.body.replaceCaseId.trim()) {
+    if (replaceCaseId?.trim()) {
       removeRejectedUpload(filePath);
       return res.status(400).json({ error: "替换目标必须与同名冲突案例一致" });
     }
