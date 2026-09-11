@@ -13,6 +13,7 @@ import { UploadModal } from './components/UploadModal';
 import { EditModal } from './components/EditModal';
 import { QRCodeModal } from './components/QRCodeModal';
 import { DeleteConfirmModal } from './components/DeleteConfirmModal';
+import { PlannerPermissionsModal } from './components/PlannerPermissionsModal';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { callApi } from './auth/api';
 import { useAuth } from './auth/AuthProvider';
@@ -34,6 +35,7 @@ export default function App() {
   const [selectedPPTForEdit, setSelectedPPTForEdit] = useState<PPTItem | null>(null);
   const [selectedPPTForDelete, setSelectedPPTForDelete] = useState<PPTItem | null>(null);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isPlannerPermissionsOpen, setIsPlannerPermissionsOpen] = useState(false);
 
   // Toast feedback
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -172,6 +174,7 @@ export default function App() {
         auth={auth}
         onOpenLogin={auth.login}
         onOpenUpload={() => setIsUploadModalOpen(true)}
+        onOpenPlannerPermissions={() => setIsPlannerPermissionsOpen(true)}
         onLogout={auth.logout}
         totalPPTs={ppts.length}
       />
@@ -352,6 +355,14 @@ export default function App() {
             addToast('success', msg);
             void fetchPPTs();
           }}
+        />
+      )}
+
+      {auth.role === 'admin' && isPlannerPermissionsOpen && (
+        <PlannerPermissionsModal
+          onClose={() => setIsPlannerPermissionsOpen(false)}
+          onSuccess={(message) => addToast('success', message)}
+          onError={(message) => addToast('error', message)}
         />
       )}
 

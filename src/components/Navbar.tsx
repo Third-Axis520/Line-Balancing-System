@@ -6,6 +6,7 @@ import {
   LogOut, 
   ShieldCheck, 
   UserCheck, 
+  UsersRound,
   Layers,
   Sparkles
 } from 'lucide-react';
@@ -15,6 +16,7 @@ interface NavbarProps {
   auth: AuthState;
   onOpenLogin: () => void;
   onOpenUpload: () => void;
+  onOpenPlannerPermissions: () => void;
   onLogout: () => void;
   totalPPTs: number;
 }
@@ -23,6 +25,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   auth,
   onOpenLogin,
   onOpenUpload,
+  onOpenPlannerPermissions,
   onLogout,
   totalPPTs,
 }) => {
@@ -85,6 +88,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                           <span className="text-amber-400 font-bold block mb-0.5">企划管理权限已生效</span>
                           <span className="text-slate-400 text-[11px]">可上传、修改及删除课件</span>
                         </div>
+                        {auth.role === 'admin' && (
+                          <button
+                            onClick={() => {
+                              setShowProfileMenu(false);
+                              onOpenPlannerPermissions();
+                            }}
+                            className="w-full text-left px-3.5 py-2.5 text-slate-200 hover:bg-slate-800 hover:text-white flex items-center gap-2.5 transition-colors"
+                          >
+                            <UsersRound className="w-4 h-4 text-amber-400" />
+                            <span>企划权限管理</span>
+                          </button>
+                        )}
                         <button
                           onClick={() => {
                             setShowProfileMenu(false);

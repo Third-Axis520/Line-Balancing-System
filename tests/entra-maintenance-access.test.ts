@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { createApp } from "../server.js";
-import { createEntraAuth } from "../server/auth.js";
+import { createEntraAuth, type EntraIdentity } from "../server/auth.js";
 
 const plannerIdentity = {
   oid: "employee-1",
@@ -14,13 +14,33 @@ const plannerIdentity = {
   name: "Assembly - Planner"
 };
 
+const adminIdentity = {
+  oid: "admin-1",
+  preferredUsername: "admin@example.com",
+  name: "Assembly - Admin"
+};
+
+const employeeIdentity = {
+  oid: "employee-2",
+  preferredUsername: "employee@example.com",
+  name: "Assembly - Employee"
+};
+
+const managedPlannerIdentity = {
+  oid: "33333333-3333-4333-8333-333333333333",
+  preferredUsername: "managed-planner@example.com",
+  name: "Assembly - Managed Planner"
+};
+
 async function startMaintenanceApp(options: {
-  verify?: () => Promise<typeof plannerIdentity>;
-  lookupEmployee?: () => Promise<{ id: string; name: string; mail: string; department?: string; accountEnabled: boolean } | undefined>;
+  verify?: (token: string) => Promise<EntraIdentity>;
+  identities?: Record<string, EntraIdentity>;
+  lookupEmployee?: (identity: EntraIdentity) => Promise<{ id: string; name: string; mail: string; department?: string; accountEnabled: boolean } | undefined>;
   admins?: string[];
   planners?: string[];
   allowedDepartments?: string[];
   refreshDirectory?: () => Promise<{ syncedAt: string; recordCount: number }>;
+  searchEmployees?: (query: string) => Promise<{ oid: string; name: string; email: string }[]>;
 }) {
   const root = await mkdtemp(path.join(os.tmpdir(), "entra-maintenance-"));
   const dataDir = path.join(root, "data");
@@ -34,13 +54,19 @@ async function startMaintenanceApp(options: {
     imageCount: 0, images: []
   }]));
   await writeFile(path.join(dataDir, "auth.json"), JSON.stringify({ admins: options.admins ?? [], planners: options.planners ?? [plannerIdentity.oid] }));
+  const identities = { valid: plannerIdentity, admin: adminIdentity, planner: managedPlannerIdentity, employee: employeeIdentity, ...options.identities };
 
   const appServer = createServer(createApp({
     dataDir,
     uploadsDir,
     auth: {
-      verifyAccessToken: options.verify ?? (async () => plannerIdentity),
+      verifyAccessToken: options.verify ?? (async token => identities[token] ?? plannerIdentity),
       lookupEmployee: options.lookupEmployee ?? (async () => ({ id: "employee-1", name: "Assembly - Planner", mail: "planner@example.com", department: "Assembly", accountEnabled: true })),
+      searchEmployees: options.searchEmployees ?? (async (query) => {
+        const normalizedQuery = query.toLowerCase();
+        const employee = { oid: plannerIdentity.oid, name: "Planner User", email: "planner@example.com" };
+        return [employee].filter(candidate => candidate.name.toLowerCase().includes(normalizedQuery) || candidate.email.toLowerCase().includes(normalizedQuery));
+      }),
       refreshDirectory: options.refreshDirectory,
       allowedDepartments: options.allowedDepartments ?? []
     }
@@ -100,17 +126,23 @@ test("auth status reports directory eligibility and local app role without turni
 });
 
 test("eligible admins can grant and revoke planner OID roles immediately", async () => {
-  const fixture = await startMaintenanceApp({ admins: [plannerIdentity.oid], planners: [] });
+  const plannerOid = "33333333-3333-4333-8333-333333333333";
+  const fixture = await startMaintenanceApp({
+    admins: [plannerIdentity.oid],
+    planners: [],
+    lookupEmployee: async (identity) => identity.oid === plannerOid
+      ? { id: plannerOid, name: "Planner User", mail: "planner@example.com", accountEnabled: true }
+      : { id: "employee-1", name: "Assembly - Planner", mail: "planner@example.com", department: "Assembly", accountEnabled: true }
+  });
   try {
     const headers = { authorization: "Bearer valid", "content-type": "application/json" };
     const before = await fixture.request("/api/admin/planners", { headers });
     assert.deepEqual(await before.json(), { planners: [] });
-    const plannerOid = "33333333-3333-4333-8333-333333333333";
     const granted = await fixture.request("/api/admin/planners", { method: "PUT", headers, body: JSON.stringify({ oid: plannerOid }) });
     assert.equal(granted.status, 200);
     assert.deepEqual(await granted.json(), { planners: [plannerOid] });
     const after = await fixture.request("/api/admin/planners", { headers });
-    assert.deepEqual(await after.json(), { planners: [plannerOid] });
+    assert.deepEqual(await after.json(), { planners: [{ oid: plannerOid, name: "Planner User", email: "planner@example.com" }] });
     const invalid = await fixture.request("/api/admin/planners", { method: "PUT", headers, body: JSON.stringify({ oid: "not-an-oid" }) });
     assert.equal(invalid.status, 400);
     const invalidPath = await fixture.request("/api/admin/planners/not-an-oid", { method: "DELETE", headers });
@@ -119,6 +151,88 @@ test("eligible admins can grant and revoke planner OID roles immediately", async
     assert.equal(revoked.status, 200);
     assert.deepEqual(await revoked.json(), { planners: [] });
   } finally { await fixture.close(); }
+});
+
+test("planner role changes immediately control maintenance access", async () => {
+  const fixture = await startMaintenanceApp({
+    admins: [adminIdentity.oid],
+    planners: [],
+    lookupEmployee: async (identity) => ({ id: identity.oid, name: identity.name, mail: identity.preferredUsername, accountEnabled: true })
+  });
+  const plannerHeaders = { authorization: "Bearer planner" };
+  const adminHeaders = { authorization: "Bearer admin", "content-type": "application/json" };
+  const upload = () => {
+    const form = new FormData();
+    form.append("file", new Blob(["fixture presentation"], { type: "application/vnd.ms-powerpoint" }), "immediate-role-change.ppt");
+    form.append("title", "Immediate role change");
+    return fixture.request("/api/ppts", { method: "POST", headers: plannerHeaders, body: form });
+  };
+  try {
+    const denied = await upload();
+    assert.equal(denied.status, 403);
+    assert.deepEqual(await denied.json(), { code: "ROLE_NOT_ALLOWED", message: "Planner or admin role is required." });
+
+    const nonAdminList = await fixture.request("/api/admin/planners", { headers: plannerHeaders });
+    assert.equal(nonAdminList.status, 403);
+    assert.deepEqual(await nonAdminList.json(), { code: "INSUFFICIENT_ROLE", message: "Admin role is required." });
+
+    const granted = await fixture.request("/api/admin/planners", { method: "PUT", headers: adminHeaders, body: JSON.stringify({ oid: managedPlannerIdentity.oid }) });
+    assert.equal(granted.status, 200);
+
+    const allowed = await upload();
+    assert.equal(allowed.status, 200);
+    assert.equal((await allowed.json()).success, true);
+
+    const revoked = await fixture.request(`/api/admin/planners/${managedPlannerIdentity.oid}`, { method: "DELETE", headers: adminHeaders });
+    assert.equal(revoked.status, 200);
+
+    const deniedAfterRevoke = await upload();
+    assert.equal(deniedAfterRevoke.status, 403);
+    assert.deepEqual(await deniedAfterRevoke.json(), { code: "ROLE_NOT_ALLOWED", message: "Planner or admin role is required." });
+  } finally { await fixture.close(); }
+});
+
+test("planner summaries retain revocable OIDs when directory lookup fails", async () => {
+  const plannerOid = "33333333-3333-4333-8333-333333333333";
+  const fixture = await startMaintenanceApp({
+    admins: [plannerIdentity.oid],
+    planners: [],
+    lookupEmployee: async (identity) => {
+      if (identity.oid === plannerOid) throw new Error("temporary directory failure");
+      return { id: "employee-1", name: "Assembly - Planner", mail: "planner@example.com", department: "Assembly", accountEnabled: true };
+    }
+  });
+  try {
+    const headers = { authorization: "Bearer valid", "content-type": "application/json" };
+    const granted = await fixture.request("/api/admin/planners", { method: "PUT", headers, body: JSON.stringify({ oid: plannerOid }) });
+    assert.equal(granted.status, 200);
+    const response = await fixture.request("/api/admin/planners", { headers });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { planners: [{ oid: plannerOid, name: null, email: null }] });
+    const revoked = await fixture.request(`/api/admin/planners/${plannerOid}`, { method: "DELETE", headers });
+    assert.equal(revoked.status, 200);
+    assert.deepEqual(await revoked.json(), { planners: [] });
+  } finally { await fixture.close(); }
+});
+
+test("directory search requires an admin role and validates the search query", async () => {
+  const employeeFixture = await startMaintenanceApp({ admins: [] });
+  try {
+    const response = await employeeFixture.request("/api/admin/directory-search?q=Planner", { headers: { authorization: "Bearer valid" } });
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), { code: "INSUFFICIENT_ROLE", message: "Admin role is required." });
+  } finally { await employeeFixture.close(); }
+
+  const adminFixture = await startMaintenanceApp({ admins: [plannerIdentity.oid] });
+  try {
+    const invalid = await adminFixture.request("/api/admin/directory-search?q=p", { headers: { authorization: "Bearer valid" } });
+    assert.equal(invalid.status, 400);
+    assert.deepEqual(await invalid.json(), { code: "INVALID_REQUEST", message: "q must contain at least two characters." });
+
+    const response = await adminFixture.request("/api/admin/directory-search?q=planner@example.com", { headers: { authorization: "Bearer valid" } });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { employees: [{ oid: plannerIdentity.oid, name: "Planner User", email: "planner@example.com" }] });
+  } finally { await adminFixture.close(); }
 });
 
 test("planner role mutation returns a safe failure while another process holds the auth lock", async () => {

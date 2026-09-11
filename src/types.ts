@@ -38,6 +38,16 @@ export interface AuthState {
   role: 'admin' | 'planner' | 'guest';
 }
 
+export interface DirectoryIdentitySummary {
+  oid: string;
+  name: string | null;
+  email: string | null;
+}
+
+export interface PlannerPermissionsResponse {
+  planners: DirectoryIdentitySummary[];
+}
+
 export type CategoryType = 
   | '全部'
   | '现场陈列与美陈'
