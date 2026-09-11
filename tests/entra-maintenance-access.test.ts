@@ -21,6 +21,7 @@ async function startMaintenanceApp(options: {
   planners?: string[];
   allowedDepartments?: string[];
   refreshDirectory?: () => Promise<{ syncedAt: string; recordCount: number }>;
+  searchEmployees?: (query: string) => Promise<{ oid: string; name: string; email: string }[]>;
 }) {
   const root = await mkdtemp(path.join(os.tmpdir(), "entra-maintenance-"));
   const dataDir = path.join(root, "data");
@@ -41,6 +42,11 @@ async function startMaintenanceApp(options: {
     auth: {
       verifyAccessToken: options.verify ?? (async () => plannerIdentity),
       lookupEmployee: options.lookupEmployee ?? (async () => ({ id: "employee-1", name: "Assembly - Planner", mail: "planner@example.com", department: "Assembly", accountEnabled: true })),
+      searchEmployees: options.searchEmployees ?? (async (query) => {
+        const normalizedQuery = query.toLowerCase();
+        const employee = { oid: plannerIdentity.oid, name: "Planner User", email: "planner@example.com" };
+        return [employee].filter(candidate => candidate.name.toLowerCase().includes(normalizedQuery) || candidate.email.toLowerCase().includes(normalizedQuery));
+      }),
       refreshDirectory: options.refreshDirectory,
       allowedDepartments: options.allowedDepartments ?? []
     }
@@ -119,6 +125,26 @@ test("eligible admins can grant and revoke planner OID roles immediately", async
     assert.equal(revoked.status, 200);
     assert.deepEqual(await revoked.json(), { planners: [] });
   } finally { await fixture.close(); }
+});
+
+test("directory search requires an admin role and validates the search query", async () => {
+  const employeeFixture = await startMaintenanceApp({ admins: [] });
+  try {
+    const response = await employeeFixture.request("/api/admin/directory-search?q=Planner", { headers: { authorization: "Bearer valid" } });
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), { code: "INSUFFICIENT_ROLE", message: "Admin role is required." });
+  } finally { await employeeFixture.close(); }
+
+  const adminFixture = await startMaintenanceApp({ admins: [plannerIdentity.oid] });
+  try {
+    const invalid = await adminFixture.request("/api/admin/directory-search?q=p", { headers: { authorization: "Bearer valid" } });
+    assert.equal(invalid.status, 400);
+    assert.deepEqual(await invalid.json(), { code: "INVALID_REQUEST", message: "q must contain at least two characters." });
+
+    const response = await adminFixture.request("/api/admin/directory-search?q=planner@example.com", { headers: { authorization: "Bearer valid" } });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { employees: [{ oid: plannerIdentity.oid, name: "Planner User", email: "planner@example.com" }] });
+  } finally { await adminFixture.close(); }
 });
 
 test("planner role mutation returns a safe failure while another process holds the auth lock", async () => {

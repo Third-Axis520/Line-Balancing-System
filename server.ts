@@ -884,6 +884,18 @@ async function requireEligibleAdmin(req: express.Request): Promise<EntraIdentity
   return identity;
 }
 
+app.get("/api/admin/directory-search", async (req, res) => {
+  try {
+    await requireEligibleAdmin(req);
+    const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (query.length < 2) return res.status(400).json({ code: "INVALID_REQUEST", message: "q must contain at least two characters." });
+    res.json({ employees: await authDependencies.searchEmployees(query) });
+  } catch (error) {
+    if (error instanceof AuthFailure) return sendAuthFailure(res, error);
+    return sendAuthFailure(res, new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable."));
+  }
+});
+
 app.get("/api/admin/planners", async (req, res) => {
   try {
     await requireEligibleAdmin(req);

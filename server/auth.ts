@@ -14,9 +14,16 @@ export interface DirectoryEmployee {
   accountEnabled: boolean;
 }
 
+export interface DirectoryIdentity {
+  oid: string;
+  name: string;
+  email: string;
+}
+
 export interface AuthDependencies {
   verifyAccessToken(token: string): Promise<EntraIdentity>;
   lookupEmployee(identity: EntraIdentity): Promise<DirectoryEmployee | undefined>;
+  searchEmployees(query: string): Promise<DirectoryIdentity[]>;
   refreshDirectory?(): Promise<{ syncedAt: string; recordCount: number }>;
   allowedDepartments?: string[];
 }
@@ -56,6 +63,35 @@ export function createEntraAuth(env: NodeJS.ProcessEnv = process.env, options: {
     return verifier;
   };
 
+  const loadEmployees = async (): Promise<DirectoryEmployee[]> => {
+    const employeeApiUrl = required(env.EMPLOYEE_API_URL, "EMPLOYEE_API_URL");
+    const timeoutMs = directoryTimeoutMs(env);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(employeeApiUrl, { signal: controller.signal });
+      if (!response.ok) {
+        throw new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable.");
+      }
+      const body: unknown = await response.json();
+      const employees = Array.isArray(body) ? body : Array.isArray((body as { value?: unknown }).value) ? (body as { value: unknown[] }).value : [];
+      return employees.map((item): DirectoryEmployee | undefined => {
+        if (!item || typeof item !== "object") return undefined;
+        const employee = item as Record<string, unknown>;
+        const id = readString(employee.id);
+        const name = readString(employee.name);
+        const mail = readString(employee.mail);
+        const department = readString(employee.department);
+        return id && name && mail && typeof employee.accountEnabled === "boolean" ? { id, name, mail, department: department || undefined, accountEnabled: employee.accountEnabled } : undefined;
+      }).filter((item): item is DirectoryEmployee => Boolean(item));
+    } catch (error) {
+      if (error instanceof AuthFailure) throw error;
+      throw new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable.");
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+
   return {
     allowedDepartments,
     async verifyAccessToken(token) {
@@ -84,34 +120,16 @@ export function createEntraAuth(env: NodeJS.ProcessEnv = process.env, options: {
       }
     },
     async lookupEmployee(identity) {
-      const employeeApiUrl = required(env.EMPLOYEE_API_URL, "EMPLOYEE_API_URL");
-      const timeoutMs = directoryTimeoutMs(env);
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const response = await fetch(employeeApiUrl, { signal: controller.signal });
-        if (!response.ok) {
-          throw new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable.");
-        }
-        const body: unknown = await response.json();
-        const employees = Array.isArray(body) ? body : Array.isArray((body as { value?: unknown }).value) ? (body as { value: unknown[] }).value : [];
-        const normalized = employees.map((item): DirectoryEmployee | undefined => {
-          if (!item || typeof item !== "object") return undefined;
-          const employee = item as Record<string, unknown>;
-          const id = readString(employee.id);
-          const name = readString(employee.name);
-          const mail = readString(employee.mail);
-          const department = readString(employee.department);
-          return id && name && mail && typeof employee.accountEnabled === "boolean" ? { id, name, mail, department: department || undefined, accountEnabled: employee.accountEnabled } : undefined;
-        }).filter((item): item is DirectoryEmployee => Boolean(item));
-        return normalized.find(employee => employee.id === identity.oid)
-          ?? normalized.find(employee => employee.mail.toLowerCase() === identity.preferredUsername.toLowerCase());
-      } catch (error) {
-        if (error instanceof AuthFailure) throw error;
-        throw new AuthFailure(503, "DIRECTORY_UNAVAILABLE", "The employee directory is unavailable.");
-      } finally {
-        clearTimeout(timeout);
-      }
+      const employees = await loadEmployees();
+      return employees.find(employee => employee.id === identity.oid)
+        ?? employees.find(employee => employee.mail.toLowerCase() === identity.preferredUsername.toLowerCase());
+    },
+    async searchEmployees(query) {
+      const normalizedQuery = query.toLowerCase();
+      return (await loadEmployees())
+        .filter(employee => employee.name.toLowerCase().includes(normalizedQuery) || employee.mail.toLowerCase().includes(normalizedQuery))
+        .slice(0, 20)
+        .map(employee => ({ oid: employee.id, name: employee.name, email: employee.mail }));
     },
     async refreshDirectory() {
       try {
