@@ -9,8 +9,8 @@ import { createServer as createViteServer } from "vite";
 import { AuthDependencies, AuthFailure, createEntraAuth, EntraIdentity } from "./server/auth.js";
 
 export interface CreateAppOptions {
-  dataDir?: string;
-  uploadsDir?: string;
+  dataDir: string;
+  uploadsDir: string;
   auth?: AuthDependencies;
 }
 
@@ -19,12 +19,12 @@ const appLifecycles = new WeakMap<express.Express, {
   ensureSlidesParsed: () => Promise<void>;
 }>();
 
-export function createApp(options: CreateAppOptions = {}): express.Express {
+export function createApp(options: CreateAppOptions): express.Express {
 const app = express();
 
 // Directories
-const DATA_DIR = options.dataDir ?? path.join(process.cwd(), "data");
-const UPLOADS_DIR = options.uploadsDir ?? path.join(process.cwd(), "uploads");
+const DATA_DIR = options.dataDir;
+const UPLOADS_DIR = options.uploadsDir;
 const PPTS_DIR = path.join(UPLOADS_DIR, "ppts");
 const PREVIEWS_DIR = path.join(UPLOADS_DIR, "previews");
 const DB_FILE = path.join(DATA_DIR, "ppts.json");
@@ -1247,7 +1247,10 @@ app.delete("/api/ppts/:id", requirePlanner, (req, res) => {
 // ---------------- Production & Vite Dev Middleware ----------------
 
 export async function startServer() {
-  const app = createApp();
+  const app = createApp({
+    dataDir: path.join(process.cwd(), "data"),
+    uploadsDir: path.join(process.cwd(), "uploads")
+  });
   const lifecycle = appLifecycles.get(app);
   if (!lifecycle) throw new Error("Server lifecycle was not initialized");
   await lifecycle.generateSeedDataIfEmpty();
