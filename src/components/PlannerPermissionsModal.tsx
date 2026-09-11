@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, Check, Loader2, Search, ShieldCheck, Trash2, UserPlus, Users, X } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AlertCircle, Loader2, Search, ShieldCheck, Trash2, UserPlus, Users, X } from 'lucide-react';
 import { callApi } from '../auth/api';
 import { DirectoryIdentitySummary, PlannerPermissionsResponse } from '../types';
 
@@ -45,49 +45,74 @@ export const PlannerPermissionsModal: React.FC<PlannerPermissionsModalProps> = (
   const [isSearching, setIsSearching] = useState(false);
   const [isGranting, setIsGranting] = useState(false);
   const [revokingOid, setRevokingOid] = useState<string | null>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const mountedRef = useRef(true);
+  const plannerRequestIdRef = useRef(0);
+  const onCloseRef = useRef(onClose);
+  const onSuccessRef = useRef(onSuccess);
+  const onErrorRef = useRef(onError);
+  const isMutatingRef = useRef(false);
+
+  onCloseRef.current = onClose;
+  onSuccessRef.current = onSuccess;
+  onErrorRef.current = onError;
 
   const loadPlanners = useCallback(async (): Promise<boolean> => {
-    setIsLoading(true);
-    setLoadError('');
+    const requestId = ++plannerRequestIdRef.current;
+    const canUpdate = () => mountedRef.current && requestId === plannerRequestIdRef.current;
+    if (canUpdate()) {
+      setIsLoading(true);
+      setLoadError('');
+    }
 
     try {
       const response = await callApi('/api/admin/planners');
+      if (!canUpdate()) return false;
       if (!response.ok) {
         const message = await getErrorMessage(response, '加载企划权限失败，请稍后重试');
+        if (!canUpdate()) return false;
         setLoadError(message);
-        onError(message);
+        onErrorRef.current(message);
         return false;
       }
 
       const data: unknown = await response.json();
+      if (!canUpdate()) return false;
       if (!isPlannerPermissionsResponse(data)) {
         const message = '企划权限数据格式异常';
         setLoadError(message);
-        onError(message);
+        onErrorRef.current(message);
         return false;
       }
 
       setPlanners(data.planners);
       return true;
     } catch {
+      if (!canUpdate()) return false;
       const message = '网络请求失败，无法加载企划权限';
       setLoadError(message);
-      onError(message);
+      onErrorRef.current(message);
       return false;
     } finally {
-      setIsLoading(false);
+      if (canUpdate()) setIsLoading(false);
     }
-  }, [onError]);
+  }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
     void loadPlanners();
+    return () => {
+      mountedRef.current = false;
+      plannerRequestIdRef.current += 1;
+    };
   }, [loadPlanners]);
 
   const handleSearch = async () => {
     const trimmedQuery = query.trim();
     if (trimmedQuery.length < 2) {
       const message = '请输入至少 2 个字符后再搜索';
-      onError(message);
+      onErrorRef.current(message);
       return;
     }
 
@@ -95,20 +120,20 @@ export const PlannerPermissionsModal: React.FC<PlannerPermissionsModalProps> = (
     try {
       const response = await callApi(`/api/admin/directory-search?q=${encodeURIComponent(trimmedQuery)}`);
       if (!response.ok) {
-        onError(await getErrorMessage(response, '搜索员工目录失败，请稍后重试'));
+        onErrorRef.current(await getErrorMessage(response, '搜索员工目录失败，请稍后重试'));
         return;
       }
 
       const data: unknown = await response.json();
       if (!isDirectorySearchResponse(data)) {
-        onError('员工目录数据格式异常');
+        onErrorRef.current('员工目录数据格式异常');
         return;
       }
-      setSearchResults(data.employees);
+      if (mountedRef.current) setSearchResults(data.employees);
     } catch {
-      onError('网络请求失败，无法搜索员工目录');
+      onErrorRef.current('网络请求失败，无法搜索员工目录');
     } finally {
-      setIsSearching(false);
+      if (mountedRef.current) setIsSearching(false);
     }
   };
 
@@ -116,7 +141,7 @@ export const PlannerPermissionsModal: React.FC<PlannerPermissionsModalProps> = (
     event.preventDefault();
     const trimmedOid = oid.trim();
     if (!trimmedOid) {
-      onError('请输入员工 OID');
+      onErrorRef.current('请输入员工 OID');
       return;
     }
 
@@ -128,21 +153,21 @@ export const PlannerPermissionsModal: React.FC<PlannerPermissionsModalProps> = (
         body: JSON.stringify({ oid: trimmedOid }),
       });
       if (!response.ok) {
-        onError(await getErrorMessage(response, '授予企划权限失败，请稍后重试'));
+        onErrorRef.current(await getErrorMessage(response, '授予企划权限失败，请稍后重试'));
         return;
       }
 
       // PUT returns OID strings; retrieve the safe identity summaries instead.
-      if (await loadPlanners()) {
+      if (await loadPlanners() && mountedRef.current) {
         setOid('');
         setQuery('');
         setSearchResults([]);
-        onSuccess('已授予企划权限');
+        onSuccessRef.current('已授予企划权限');
       }
     } catch {
-      onError('网络请求失败，无法授予企划权限');
+      onErrorRef.current('网络请求失败，无法授予企划权限');
     } finally {
-      setIsGranting(false);
+      if (mountedRef.current) setIsGranting(false);
     }
   };
 
@@ -151,25 +176,71 @@ export const PlannerPermissionsModal: React.FC<PlannerPermissionsModalProps> = (
     try {
       const response = await callApi(`/api/admin/planners/${encodeURIComponent(plannerOid)}`, { method: 'DELETE' });
       if (!response.ok) {
-        onError(await getErrorMessage(response, '撤销企划权限失败，请稍后重试'));
+        onErrorRef.current(await getErrorMessage(response, '撤销企划权限失败，请稍后重试'));
         return;
       }
 
       // DELETE returns OID strings; retrieve the safe identity summaries instead.
-      if (await loadPlanners()) onSuccess('已撤销企划权限');
+      if (await loadPlanners()) onSuccessRef.current('已撤销企划权限');
     } catch {
-      onError('网络请求失败，无法撤销企划权限');
+      onErrorRef.current('网络请求失败，无法撤销企划权限');
     } finally {
-      setRevokingOid(null);
+      if (mountedRef.current) setRevokingOid(null);
     }
   };
 
   const isMutating = isGranting || revokingOid !== null;
+  isMutatingRef.current = isMutating;
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusInitialControl = () => closeButtonRef.current?.focus();
+    const timer = window.setTimeout(focusInitialControl, 0);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !isMutatingRef.current) {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const focusable = modalRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable || focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!modalRef.current?.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('keydown', handleKeyDown);
+      if (previouslyFocused?.isConnected) previouslyFocused.focus();
+    };
+  }, []);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/80 p-2 backdrop-blur-sm animate-in fade-in sm:p-6">
-      <div className="relative my-auto max-h-[95vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-800 bg-slate-900 p-4 text-slate-100 shadow-2xl sm:p-7">
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="planner-permissions-modal-title"
+        className="relative my-auto max-h-[95vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-800 bg-slate-900 p-4 text-slate-100 shadow-2xl sm:p-7"
+      >
         <button
+          ref={closeButtonRef}
           type="button"
           onClick={onClose}
           disabled={isMutating}
@@ -184,7 +255,7 @@ export const PlannerPermissionsModal: React.FC<PlannerPermissionsModalProps> = (
             <ShieldCheck className="h-4 w-4 sm:h-5 sm:w-5" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-white sm:text-lg">企划权限管理</h3>
+            <h3 id="planner-permissions-modal-title" className="text-base font-bold text-white sm:text-lg">企划权限管理</h3>
             <p className="text-[11px] text-slate-400 sm:text-xs">搜索员工或直接输入 OID，管理可发布企划课件的人员。</p>
           </div>
         </div>
