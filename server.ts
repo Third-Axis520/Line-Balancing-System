@@ -961,14 +961,7 @@ app.get("/api/ppts", (req, res) => {
 
   if (search && search.trim()) {
     const kw = search.trim().toLowerCase();
-    list = list.filter(
-      (p) =>
-        p.title.toLowerCase().includes(kw) ||
-        p.description.toLowerCase().includes(kw) ||
-        (p.uploader && p.uploader.toLowerCase().includes(kw)) ||
-        (p.tags && p.tags.some((t) => t.toLowerCase().includes(kw))) ||
-        (p.targetDepartment && p.targetDepartment.toLowerCase().includes(kw))
-    );
+    list = list.filter((p) => p.title.toLowerCase().includes(kw));
   }
 
   const parseUploadTime = (dateStr?: string): number => {
