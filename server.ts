@@ -12,6 +12,7 @@ export interface CreateAppOptions {
   dataDir: string;
   uploadsDir: string;
   auth?: AuthDependencies;
+  maxUploadBytes?: number;
 }
 
 const appLifecycles = new WeakMap<express.Express, {
@@ -76,12 +77,35 @@ const storage = multer.diskStorage({
   }
 });
 
+const maxUploadBytes = options.maxUploadBytes ?? 200 * 1024 * 1024;
 const upload = multer({
   storage,
   limits: {
-    fileSize: 200 * 1024 * 1024 // 200MB max for rich image PPTs
+    // Busboy treats its file-size limit as exclusive. Leave one byte for the
+    // route to make the configured <= boundary authoritative.
+    fileSize: maxUploadBytes + 1
   }
 });
+
+function removeRejectedUpload(filePath?: string, previewId?: string) {
+  try {
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    if (previewId) fs.rmSync(path.join(PREVIEWS_DIR, previewId), { recursive: true, force: true });
+  } catch (error) {
+    console.error("Failed to clean up rejected upload:", error);
+  }
+}
+
+function uploadSinglePpt(req: express.Request, res: express.Response, next: express.NextFunction) {
+  upload.single("file")(req, res, (error: unknown) => {
+    if (!error) return next();
+    removeRejectedUpload(req.file?.path);
+    if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({ error: "上传文件大小不能超过 200 MB" });
+    }
+    return next(error);
+  });
+}
 
 // Middleware
 app.use(express.json({ limit: "50mb" }));
@@ -377,6 +401,7 @@ async function extractPptxContent(
     }
   } catch (err) {
     console.error("Error extracting PPTX content:", err);
+    throw err;
   }
 
   return {
@@ -437,15 +462,19 @@ async function ensureSlidesParsed() {
         const pptFile = path.join(PPTS_DIR, ppt.storedFileName);
         if (fs.existsSync(pptFile) && ppt.originalFileName.toLowerCase().endsWith(".pptx")) {
           console.log(`Extracting slides for ${ppt.title}...`);
-          const extracted = await extractPptxContent(pptFile, ppt.id);
-          if (extracted.slides && extracted.slides.length > 0) {
-            ppt.slides = extracted.slides;
-            ppt.slideCount = extracted.slideCount;
-            if (extracted.images.length > 0) {
-              ppt.images = extracted.images;
-              ppt.imageCount = extracted.images.length;
+          try {
+            const extracted = await extractPptxContent(pptFile, ppt.id);
+            if (extracted.slides && extracted.slides.length > 0) {
+              ppt.slides = extracted.slides;
+              ppt.slideCount = extracted.slideCount;
+              if (extracted.images.length > 0) {
+                ppt.images = extracted.images;
+                ppt.imageCount = extracted.images.length;
+              }
+              modified = true;
             }
-            modified = true;
+          } catch (error) {
+            console.error(`Failed to extract slides for ${ppt.title}:`, error);
           }
         }
       }
@@ -1087,7 +1116,8 @@ app.get("/api/stats", (req, res) => {
 // ---------------- Planner Protected Routes ----------------
 
 // Upload new PPT (Planner only)
-app.post("/api/ppts", requirePlanner, upload.single("file"), async (req, res) => {
+app.post("/api/ppts", requirePlanner, uploadSinglePpt, async (req, res) => {
+  let id: string | undefined;
   try {
     if (!req.file) {
       return res.status(400).json({ error: "请选择要上传的PPT文件" });
@@ -1103,11 +1133,47 @@ app.post("/api/ppts", requirePlanner, upload.single("file"), async (req, res) =>
       isPinned
     } = req.body;
 
-    const id = `ppt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const originalFileName = req.file.originalname;
     const storedFileName = req.file.filename;
     const filePath = req.file.path;
     const fileSize = req.file.size;
+    const normalizedTitle = typeof title === "string" ? title.trim() : "";
+    const extension = path.extname(originalFileName).toLowerCase();
+    const replaceCaseId = req.body.replaceCaseId;
+
+    if (extension !== ".ppt" && extension !== ".pptx") {
+      removeRejectedUpload(filePath);
+      return res.status(400).json({ error: "仅支持 .pptx 或 .ppt 格式的PPT文件" });
+    }
+    if (!normalizedTitle) {
+      removeRejectedUpload(filePath);
+      return res.status(400).json({ error: "案例名称不能为空" });
+    }
+    if (replaceCaseId !== undefined && typeof replaceCaseId !== "string") {
+      removeRejectedUpload(filePath);
+      return res.status(400).json({ error: "替换目标格式无效" });
+    }
+    if (fileSize > maxUploadBytes) {
+      removeRejectedUpload(filePath);
+      return res.status(400).json({ error: "上传文件大小不能超过 200 MB" });
+    }
+
+    const replacementId = replaceCaseId;
+    const ppts = getPPTs();
+    const conflict = ppts.find(ppt => ppt.title.trim() === normalizedTitle);
+    if (conflict && replacementId !== conflict.id) {
+      removeRejectedUpload(filePath);
+      return res.status(409).json({
+        error: "案例名称已存在，请选择替换现有案例或修改名称",
+        conflict: { id: conflict.id, title: conflict.title }
+      });
+    }
+    if (!conflict && replacementId) {
+      removeRejectedUpload(filePath);
+      return res.status(400).json({ error: "替换目标必须与同名冲突案例一致" });
+    }
+
+    id = `ppt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
     // Extract full slide content and images if PPTX
     let contentInfo = { images: [] as string[], slideCount: 1, slides: [] as StoredPPTSlide[] };
@@ -1147,7 +1213,7 @@ app.post("/api/ppts", requirePlanner, upload.single("file"), async (req, res) =>
 
     const newPPT: StoredPPT = {
       id,
-      title: title?.trim() || originalFileName.replace(/\.[^/.]+$/, ""),
+      title: normalizedTitle,
       originalFileName,
       storedFileName,
       fileSize,
@@ -1168,17 +1234,106 @@ app.post("/api/ppts", requirePlanner, upload.single("file"), async (req, res) =>
       tags: parsedTags.length > 0 ? parsedTags : ["线平衡改善", "工时优化"]
     };
 
-    const ppts = getPPTs();
-    ppts.unshift(newPPT);
-    savePPTs(ppts);
+    const pptsAtCommit = getPPTs();
+    const commitConflict = pptsAtCommit.find(ppt => ppt.title.trim() === normalizedTitle);
+    let publishedPPT = newPPT;
+
+    if (replacementId) {
+      const replacementIndex = pptsAtCommit.findIndex(ppt => ppt.id === replacementId);
+      const replacementTarget = pptsAtCommit[replacementIndex];
+
+      // Revalidate after parsing: another request may have changed or removed the target.
+      if (!replacementTarget || replacementTarget.title.trim() !== normalizedTitle || commitConflict?.id !== replacementId) {
+        removeRejectedUpload(filePath, id);
+        return res.status(409).json({
+          error: "案例名称已存在，请选择替换现有案例或修改名称",
+          conflict: commitConflict ? { id: commitConflict.id, title: commitConflict.title } : undefined
+        });
+      }
+
+      const candidatePreviewPrefix = `/uploads/previews/${id}/`;
+      const stablePreviewPrefix = `/uploads/previews/${replacementTarget.id}/`;
+      publishedPPT = {
+        ...newPPT,
+        id: replacementTarget.id,
+        fileUrl: replacementTarget.fileUrl,
+        downloadCount: replacementTarget.downloadCount,
+        images: newPPT.images.map(image => image.startsWith(candidatePreviewPrefix)
+          ? `${stablePreviewPrefix}${image.slice(candidatePreviewPrefix.length)}`
+          : image),
+        slides: newPPT.slides.map(slide => ({
+          ...slide,
+          images: slide.images.map(image => image.startsWith(candidatePreviewPrefix)
+            ? `${stablePreviewPrefix}${image.slice(candidatePreviewPrefix.length)}`
+            : image),
+          slideImageUrl: slide.slideImageUrl?.startsWith(candidatePreviewPrefix)
+            ? `${stablePreviewPrefix}${slide.slideImageUrl.slice(candidatePreviewPrefix.length)}`
+            : slide.slideImageUrl
+        }))
+      };
+      pptsAtCommit[replacementIndex] = publishedPPT;
+      savePPTs(pptsAtCommit);
+
+      // The new file and preview were fully prepared before persistence. Promote
+      // its preview before best-effort retirement so a successful response never
+      // advertises URLs that still point at a temporary candidate directory.
+      const oldPreviewDir = path.join(PREVIEWS_DIR, replacementTarget.id);
+      const candidatePreviewDir = path.join(PREVIEWS_DIR, id);
+      const retiredPreviewDir = path.join(PREVIEWS_DIR, `${replacementTarget.id}.replaced-${id}`);
+      try {
+        if (fs.existsSync(oldPreviewDir)) fs.renameSync(oldPreviewDir, retiredPreviewDir);
+        if (fs.existsSync(candidatePreviewDir)) fs.renameSync(candidatePreviewDir, oldPreviewDir);
+      } catch (promotionError) {
+        console.error("Failed to promote replacement PPT preview:", promotionError);
+        try {
+          // Persistence has already completed, so restore both the original
+          // record and its preview before reporting the replacement failure.
+          pptsAtCommit[replacementIndex] = replacementTarget;
+          savePPTs(pptsAtCommit);
+          if (fs.existsSync(retiredPreviewDir)) {
+            if (fs.existsSync(oldPreviewDir)) fs.rmSync(oldPreviewDir, { recursive: true, force: true });
+            fs.renameSync(retiredPreviewDir, oldPreviewDir);
+          }
+        } catch (recoveryError) {
+          console.error("Failed to recover replacement PPT after preview promotion error:", recoveryError);
+        }
+        removeRejectedUpload(filePath, id);
+        return res.status(500).json({ error: "上传失败: 无法发布替换案例预览" });
+      }
+
+      // Retiring the old artifacts must not invalidate the already published
+      // replacement preview. Each cleanup is independent and best-effort.
+      try {
+        const oldFilePath = path.join(PPTS_DIR, replacementTarget.storedFileName);
+        if (oldFilePath !== filePath && fs.existsSync(oldFilePath)) fs.unlinkSync(oldFilePath);
+      } catch (cleanupError) {
+        console.error("Failed to retire replaced PPT file:", cleanupError);
+      }
+      try {
+        if (fs.existsSync(retiredPreviewDir)) fs.rmSync(retiredPreviewDir, { recursive: true, force: true });
+      } catch (cleanupError) {
+        console.error("Failed to retire replaced PPT preview:", cleanupError);
+      }
+    } else {
+      if (commitConflict) {
+        removeRejectedUpload(filePath, id);
+        return res.status(409).json({
+          error: "案例名称已存在，请选择替换现有案例或修改名称",
+          conflict: { id: commitConflict.id, title: commitConflict.title }
+        });
+      }
+      pptsAtCommit.unshift(newPPT);
+      savePPTs(pptsAtCommit);
+    }
 
     res.json({
       success: true,
-      message: `PPT《${newPPT.title}》上传成功，已提取 ${newPPT.imageCount} 张图片物料！`,
-      ppt: newPPT
+      message: `PPT《${publishedPPT.title}》上传成功，已提取 ${publishedPPT.imageCount} 张图片物料！`,
+      ppt: publishedPPT
     });
   } catch (err: any) {
     console.error("Upload failed:", err);
+    removeRejectedUpload(req.file?.path, id);
     res.status(500).json({ error: `上传失败: ${err.message || "服务器内部错误"}` });
   }
 });
