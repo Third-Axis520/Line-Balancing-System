@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -179,6 +180,34 @@ test("case publication requires an exact conflict id before replacing a case", a
   assert.deepEqual(JSON.parse(await readFile(path.join(fixture.dataDir, "ppts.json"), "utf8")), [existingCase]);
   assert.deepEqual(await readdir(path.join(fixture.uploadsDir, "ppts")), []);
   assert.deepEqual(await readdir(path.join(fixture.uploadsDir, "previews")), []);
+});
+
+test("case replacement publishes prepared previews despite old artifact cleanup failure", async (t) => {
+  const fixture = await startPublicationApp(t);
+  const oldFile = path.join(fixture.uploadsDir, "ppts", "existing.ppt");
+  const oldPreviewDir = path.join(fixture.uploadsDir, "previews", "existing-case");
+  await writeFile(oldFile, "old presentation");
+  await mkdir(oldPreviewDir);
+  await writeFile(path.join(oldPreviewDir, "cover.svg"), "old preview");
+
+  const originalUnlinkSync = fs.unlinkSync;
+  fs.unlinkSync = ((filePath: fs.PathLike) => {
+    if (filePath === oldFile) throw new Error("simulated old-file cleanup failure");
+    return originalUnlinkSync(filePath);
+  }) as typeof fs.unlinkSync;
+  t.after(() => { fs.unlinkSync = originalUnlinkSync; });
+
+  const form = await uploadPptxForm("装配线节拍改善");
+  form.set("replaceCaseId", "existing-case");
+  const response = await fixture.request(form);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.ppt.images[0], "/uploads/previews/existing-case/cover.svg");
+
+  const preview = await fetch(`${fixture.baseUrl}${payload.ppt.images[0]}`);
+  assert.equal(preview.status, 200);
+  assert.match(await preview.text(), /生产线平衡改善案例/);
+  assert.equal(await readFile(oldFile, "utf8"), "old presentation");
 });
 
 test("case publication cleans files and previews when PPTX parsing fails", async (t) => {

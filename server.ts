@@ -1271,17 +1271,32 @@ app.post("/api/ppts", requirePlanner, uploadSinglePpt, async (req, res) => {
       pptsAtCommit[replacementIndex] = publishedPPT;
       savePPTs(pptsAtCommit);
 
-      // The new file and preview were fully prepared before persistence.  Only now
-      // is it safe to retire the artifacts that belonged to the replaced record.
+      // The new file and preview were fully prepared before persistence. Promote
+      // its preview before best-effort retirement so a successful response never
+      // advertises URLs that still point at a temporary candidate directory.
+      const oldPreviewDir = path.join(PREVIEWS_DIR, replacementTarget.id);
+      const candidatePreviewDir = path.join(PREVIEWS_DIR, id);
+      const retiredPreviewDir = path.join(PREVIEWS_DIR, `${replacementTarget.id}.replaced-${id}`);
+      try {
+        if (fs.existsSync(oldPreviewDir)) fs.renameSync(oldPreviewDir, retiredPreviewDir);
+        if (fs.existsSync(candidatePreviewDir)) fs.renameSync(candidatePreviewDir, oldPreviewDir);
+      } catch (promotionError) {
+        console.error("Failed to promote replacement PPT preview:", promotionError);
+        return res.status(500).json({ error: "上传失败: 无法发布替换案例预览" });
+      }
+
+      // Retiring the old artifacts must not invalidate the already published
+      // replacement preview. Each cleanup is independent and best-effort.
       try {
         const oldFilePath = path.join(PPTS_DIR, replacementTarget.storedFileName);
         if (oldFilePath !== filePath && fs.existsSync(oldFilePath)) fs.unlinkSync(oldFilePath);
-        const oldPreviewDir = path.join(PREVIEWS_DIR, replacementTarget.id);
-        if (fs.existsSync(oldPreviewDir)) fs.rmSync(oldPreviewDir, { recursive: true, force: true });
-        const candidatePreviewDir = path.join(PREVIEWS_DIR, id);
-        if (fs.existsSync(candidatePreviewDir)) fs.renameSync(candidatePreviewDir, oldPreviewDir);
       } catch (cleanupError) {
-        console.error("Failed to retire replaced PPT artifacts:", cleanupError);
+        console.error("Failed to retire replaced PPT file:", cleanupError);
+      }
+      try {
+        if (fs.existsSync(retiredPreviewDir)) fs.rmSync(retiredPreviewDir, { recursive: true, force: true });
+      } catch (cleanupError) {
+        console.error("Failed to retire replaced PPT preview:", cleanupError);
       }
     } else {
       if (commitConflict) {
