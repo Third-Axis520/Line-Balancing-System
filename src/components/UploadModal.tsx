@@ -17,6 +17,9 @@ interface UploadModalProps {
   onSuccess: (message: string) => void;
 }
 
+const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
+const DUPLICATE_CASE_ERROR = '案例名称已存在，请选择替换现有案例或修改名称';
+
 export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess }) => {
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
@@ -26,41 +29,50 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess }) 
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState('');
+  const [conflict, setConflict] = useState<{ id: string; title: string } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  const validateFile = (selectedFile: File) => {
+    const extension = selectedFile.name.split('.').pop()?.toLowerCase();
+    if (extension !== 'ppt' && extension !== 'pptx') {
+      setErrorMessage('仅支持上传 .pptx 或 .ppt 格式的幻灯片文件');
+      return false;
+    }
+    if (selectedFile.size > MAX_UPLOAD_BYTES) {
+      setErrorMessage('上传文件大小不能超过 200 MB');
+      return false;
+    }
+    return true;
+  };
+
+  const selectFile = (selectedFile: File) => {
+    if (!validateFile(selectedFile)) return;
+
+    setFile(selectedFile);
+    if (!title) {
+      setTitle(selectedFile.name.replace(/\.[^/.]+$/, ''));
+    }
+    setErrorMessage('');
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const selectedFile = e.target.files[0];
-      setFile(selectedFile);
-      if (!title) {
-        // Remove file extension for default title
-        const cleanName = selectedFile.name.replace(/\.[^/.]+$/, '');
-        setTitle(cleanName);
-      }
-      setErrorMessage('');
+      selectFile(e.target.files[0]);
     }
+    e.target.value = '';
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const droppedFile = e.dataTransfer.files[0];
-      const ext = droppedFile.name.split('.').pop()?.toLowerCase();
-      if (ext === 'pptx' || ext === 'ppt') {
-        setFile(droppedFile);
-        if (!title) {
-          setTitle(droppedFile.name.replace(/\.[^/.]+$/, ''));
-        }
-        setErrorMessage('');
-      } else {
-        setErrorMessage('仅支持上传 .pptx 或 .ppt 格式的幻灯片文件');
-      }
+      selectFile(e.dataTransfer.files[0]);
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     if (!file) {
       setErrorMessage('请先选择要上传的 PPT 文件');
       return;
@@ -82,6 +94,9 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess }) 
     formData.append('title', title.trim());
     formData.append('description', description.trim());
     formData.append('isPinned', String(isPinned));
+    if (conflict) {
+      formData.append('replaceCaseId', conflict.id);
+    }
 
     // Using XMLHttpRequest to provide real upload progress for large image PPTs
     const xhr = new XMLHttpRequest();
@@ -108,6 +123,13 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess }) 
         if (xhr.status >= 200 && xhr.status < 300 && res.success) {
           onSuccess(res.message || 'PPT 上传并解析完成！');
           onClose();
+        } else if (
+          xhr.status === 409 &&
+          res?.error === DUPLICATE_CASE_ERROR &&
+          typeof res?.conflict?.id === 'string' &&
+          typeof res?.conflict?.title === 'string'
+        ) {
+          setConflict({ id: res.conflict.id, title: res.conflict.title });
         } else {
           setErrorMessage(res.error || '上传失败，请稍后重试');
         }
@@ -214,6 +236,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess }) 
               </label>
               <input
                 type="text"
+                ref={titleInputRef}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="例如：总装车间A线平衡率提升与节拍优化改善案"
@@ -250,6 +273,47 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess }) 
               </label>
             </div>
           </div>
+
+          {conflict && (
+            <div
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="duplicate-case-title"
+              aria-describedby="duplicate-case-description"
+              className="rounded-xl border border-amber-500/50 bg-amber-950/30 p-3.5 space-y-3"
+            >
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                <div>
+                  <p id="duplicate-case-title" className="font-semibold text-amber-200">发现同名案例</p>
+                  <p id="duplicate-case-description" className="mt-1 text-slate-300">
+                    已存在案例「{conflict.title}」。是否替换现有案例？
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleSubmit()}
+                  disabled={isUploading}
+                  className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition-colors disabled:opacity-50"
+                >
+                  替换现有案例
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConflict(null);
+                    requestAnimationFrame(() => titleInputRef.current?.focus());
+                  }}
+                  disabled={isUploading}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors disabled:opacity-50"
+                >
+                  返回修改名称
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Upload Progress Bar */}
           {isUploading && (
