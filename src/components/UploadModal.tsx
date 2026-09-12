@@ -91,7 +91,14 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess }) 
       return;
     }
 
-    const token = await getAccessToken();
+    let token: string | null;
+    try {
+      token = await getAccessToken();
+    } catch {
+      resetReplacementIntent();
+      setErrorMessage('获取登录凭据失败，请重试');
+      return;
+    }
     if (!token) {
       resetReplacementIntent();
       return;
