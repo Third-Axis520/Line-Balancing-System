@@ -142,6 +142,10 @@ test("case publication validates uploaded case metadata and cleans rejected file
 
 test("case publication explicitly replaces a conflicting case while preserving its public identity", async (t) => {
   const fixture = await startPublicationApp(t);
+  await writeFile(path.join(fixture.dataDir, "ppts.json"), JSON.stringify([{
+    ...existingCase,
+    downloadCount: 37
+  }]));
   const duplicate = await fixture.request(uploadForm({ title: "装配线节拍改善" }, "duplicate.ppt"));
   assert.equal(duplicate.status, 409);
   const conflict = await duplicate.json();
@@ -155,12 +159,26 @@ test("case publication explicitly replaces a conflicting case while preserving i
   const replacementPayload = await replacement.json();
   assert.equal(replacementPayload.ppt.id, "existing-case");
   assert.equal(replacementPayload.ppt.fileUrl, "/api/ppts/existing-case/download");
+  assert.equal(replacementPayload.ppt.downloadCount, 37);
 
   const publicList = await fetch(`${fixture.baseUrl}/api/ppts`);
   assert.equal(publicList.status, 200);
   const published = await publicList.json();
   const replacedCase = published.find((ppt: { id: string }) => ppt.id === "existing-case");
   assert.equal(replacedCase.fileUrl, "/api/ppts/existing-case/download");
+});
+
+test("case publication requires an exact conflict id before replacing a case", async (t) => {
+  const fixture = await startPublicationApp(t);
+  const response = await fixture.request(uploadForm({
+    title: "装配线节拍改善",
+    replaceCaseId: " existing-case "
+  }, "replacement.ppt"));
+
+  assert.equal(response.status, 409);
+  assert.deepEqual(JSON.parse(await readFile(path.join(fixture.dataDir, "ppts.json"), "utf8")), [existingCase]);
+  assert.deepEqual(await readdir(path.join(fixture.uploadsDir, "ppts")), []);
+  assert.deepEqual(await readdir(path.join(fixture.uploadsDir, "previews")), []);
 });
 
 test("case publication cleans files and previews when PPTX parsing fails", async (t) => {

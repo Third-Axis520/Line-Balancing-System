@@ -1155,7 +1155,7 @@ app.post("/api/ppts", requirePlanner, uploadSinglePpt, async (req, res) => {
       return res.status(400).json({ error: "上传文件大小不能超过 200 MB" });
     }
 
-    const replacementId = replaceCaseId?.trim();
+    const replacementId = replaceCaseId;
     const ppts = getPPTs();
     const conflict = ppts.find(ppt => ppt.title.trim() === normalizedTitle);
     if (conflict && replacementId !== conflict.id) {
@@ -1254,6 +1254,7 @@ app.post("/api/ppts", requirePlanner, uploadSinglePpt, async (req, res) => {
         ...newPPT,
         id: replacementTarget.id,
         fileUrl: replacementTarget.fileUrl,
+        downloadCount: replacementTarget.downloadCount,
         images: newPPT.images.map(image => image.startsWith(candidatePreviewPrefix)
           ? `${stablePreviewPrefix}${image.slice(candidatePreviewPrefix.length)}`
           : image),
