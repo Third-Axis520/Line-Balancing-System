@@ -30,9 +30,16 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess }) 
   const [uploadProgress, setUploadProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState('');
   const [conflict, setConflict] = useState<{ id: string; title: string } | null>(null);
+  const [replacementIntent, setReplacementIntent] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const replacementIntentRef = useRef(false);
+
+  const resetReplacementIntent = () => {
+    replacementIntentRef.current = false;
+    setReplacementIntent(false);
+  };
 
   const validateFile = (selectedFile: File) => {
     if (!/\.(ppt|pptx)$/i.test(selectedFile.name)) {
@@ -70,19 +77,27 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess }) 
     }
   };
 
-  const handleSubmit = async (e?: React.FormEvent) => {
+  const handleSubmit = async (e?: React.FormEvent, submitReplacement = false) => {
     e?.preventDefault();
+    if (isUploading) return;
     if (!file) {
+      resetReplacementIntent();
       setErrorMessage('请先选择要上传的 PPT 文件');
       return;
     }
     if (!title.trim()) {
+      resetReplacementIntent();
       setErrorMessage('请输入 PPT 标题');
       return;
     }
 
     const token = await getAccessToken();
-    if (!token) return;
+    if (!token) {
+      resetReplacementIntent();
+      return;
+    }
+
+    const shouldReplace = submitReplacement && replacementIntentRef.current && conflict;
 
     setIsUploading(true);
     setUploadProgress(10);
@@ -93,8 +108,8 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess }) 
     formData.append('title', title.trim());
     formData.append('description', description.trim());
     formData.append('isPinned', String(isPinned));
-    if (conflict) {
-      formData.append('replaceCaseId', conflict.id);
+    if (shouldReplace) {
+      formData.append('replaceCaseId', shouldReplace.id);
     }
 
     // Using XMLHttpRequest to provide real upload progress for large image PPTs
@@ -114,12 +129,14 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess }) 
     xhr.onload = () => {
       setIsUploading(false);
       if (xhr.status === 401) {
+        resetReplacementIntent();
         void beginLogin();
         return;
       }
       try {
         const res = JSON.parse(xhr.responseText);
         if (xhr.status >= 200 && xhr.status < 300 && res.success) {
+          resetReplacementIntent();
           onSuccess(res.message || 'PPT 上传并解析完成！');
           onClose();
         } else if (
@@ -128,17 +145,21 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess }) 
           typeof res?.conflict?.id === 'string' &&
           typeof res?.conflict?.title === 'string'
         ) {
+          resetReplacementIntent();
           setConflict({ id: res.conflict.id, title: res.conflict.title });
         } else {
+          resetReplacementIntent();
           setErrorMessage(res.error || '上传失败，请稍后重试');
         }
       } catch {
+        resetReplacementIntent();
         setErrorMessage('服务器响应异常');
       }
     };
 
     xhr.onerror = () => {
       setIsUploading(false);
+      resetReplacementIntent();
       setErrorMessage('网络连接错误，无法完成上传');
     };
 
@@ -147,6 +168,12 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess }) 
 
   const formatFileSize = (bytes: number) => {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  const handleReplaceExisting = () => {
+    replacementIntentRef.current = true;
+    setReplacementIntent(true);
+    void handleSubmit(undefined, true);
   };
 
   return (
@@ -291,8 +318,8 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess }) 
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => void handleSubmit()}
-                  disabled={isUploading}
+                  onClick={handleReplaceExisting}
+                  disabled={isUploading || replacementIntent}
                   className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition-colors disabled:opacity-50"
                 >
                   替换现有案例
@@ -301,6 +328,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess }) 
                   type="button"
                   onClick={() => {
                     setConflict(null);
+                    resetReplacementIntent();
                     requestAnimationFrame(() => titleInputRef.current?.focus());
                   }}
                   disabled={isUploading}
