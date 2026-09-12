@@ -1155,16 +1155,17 @@ app.post("/api/ppts", requirePlanner, uploadSinglePpt, async (req, res) => {
       return res.status(400).json({ error: "上传文件大小不能超过 200 MB" });
     }
 
+    const replacementId = replaceCaseId?.trim();
     const ppts = getPPTs();
     const conflict = ppts.find(ppt => ppt.title.trim() === normalizedTitle);
-    if (conflict) {
+    if (conflict && replacementId !== conflict.id) {
       removeRejectedUpload(filePath);
       return res.status(409).json({
         error: "案例名称已存在，请选择替换现有案例或修改名称",
         conflict: { id: conflict.id, title: conflict.title }
       });
     }
-    if (replaceCaseId?.trim()) {
+    if (!conflict && replacementId) {
       removeRejectedUpload(filePath);
       return res.status(400).json({ error: "替换目标必须与同名冲突案例一致" });
     }
@@ -1232,20 +1233,71 @@ app.post("/api/ppts", requirePlanner, uploadSinglePpt, async (req, res) => {
 
     const pptsAtCommit = getPPTs();
     const commitConflict = pptsAtCommit.find(ppt => ppt.title.trim() === normalizedTitle);
-    if (commitConflict) {
-      removeRejectedUpload(filePath, id);
-      return res.status(409).json({
-        error: "案例名称已存在，请选择替换现有案例或修改名称",
-        conflict: { id: commitConflict.id, title: commitConflict.title }
-      });
+    let publishedPPT = newPPT;
+
+    if (replacementId) {
+      const replacementIndex = pptsAtCommit.findIndex(ppt => ppt.id === replacementId);
+      const replacementTarget = pptsAtCommit[replacementIndex];
+
+      // Revalidate after parsing: another request may have changed or removed the target.
+      if (!replacementTarget || replacementTarget.title.trim() !== normalizedTitle || commitConflict?.id !== replacementId) {
+        removeRejectedUpload(filePath, id);
+        return res.status(409).json({
+          error: "案例名称已存在，请选择替换现有案例或修改名称",
+          conflict: commitConflict ? { id: commitConflict.id, title: commitConflict.title } : undefined
+        });
+      }
+
+      const candidatePreviewPrefix = `/uploads/previews/${id}/`;
+      const stablePreviewPrefix = `/uploads/previews/${replacementTarget.id}/`;
+      publishedPPT = {
+        ...newPPT,
+        id: replacementTarget.id,
+        fileUrl: replacementTarget.fileUrl,
+        images: newPPT.images.map(image => image.startsWith(candidatePreviewPrefix)
+          ? `${stablePreviewPrefix}${image.slice(candidatePreviewPrefix.length)}`
+          : image),
+        slides: newPPT.slides.map(slide => ({
+          ...slide,
+          images: slide.images.map(image => image.startsWith(candidatePreviewPrefix)
+            ? `${stablePreviewPrefix}${image.slice(candidatePreviewPrefix.length)}`
+            : image),
+          slideImageUrl: slide.slideImageUrl?.startsWith(candidatePreviewPrefix)
+            ? `${stablePreviewPrefix}${slide.slideImageUrl.slice(candidatePreviewPrefix.length)}`
+            : slide.slideImageUrl
+        }))
+      };
+      pptsAtCommit[replacementIndex] = publishedPPT;
+      savePPTs(pptsAtCommit);
+
+      // The new file and preview were fully prepared before persistence.  Only now
+      // is it safe to retire the artifacts that belonged to the replaced record.
+      try {
+        const oldFilePath = path.join(PPTS_DIR, replacementTarget.storedFileName);
+        if (oldFilePath !== filePath && fs.existsSync(oldFilePath)) fs.unlinkSync(oldFilePath);
+        const oldPreviewDir = path.join(PREVIEWS_DIR, replacementTarget.id);
+        if (fs.existsSync(oldPreviewDir)) fs.rmSync(oldPreviewDir, { recursive: true, force: true });
+        const candidatePreviewDir = path.join(PREVIEWS_DIR, id);
+        if (fs.existsSync(candidatePreviewDir)) fs.renameSync(candidatePreviewDir, oldPreviewDir);
+      } catch (cleanupError) {
+        console.error("Failed to retire replaced PPT artifacts:", cleanupError);
+      }
+    } else {
+      if (commitConflict) {
+        removeRejectedUpload(filePath, id);
+        return res.status(409).json({
+          error: "案例名称已存在，请选择替换现有案例或修改名称",
+          conflict: { id: commitConflict.id, title: commitConflict.title }
+        });
+      }
+      pptsAtCommit.unshift(newPPT);
+      savePPTs(pptsAtCommit);
     }
-    pptsAtCommit.unshift(newPPT);
-    savePPTs(pptsAtCommit);
 
     res.json({
       success: true,
-      message: `PPT《${newPPT.title}》上传成功，已提取 ${newPPT.imageCount} 张图片物料！`,
-      ppt: newPPT
+      message: `PPT《${publishedPPT.title}》上传成功，已提取 ${publishedPPT.imageCount} 张图片物料！`,
+      ppt: publishedPPT
     });
   } catch (err: any) {
     console.error("Upload failed:", err);
