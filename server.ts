@@ -77,10 +77,13 @@ const storage = multer.diskStorage({
   }
 });
 
+const maxUploadBytes = options.maxUploadBytes ?? 200 * 1024 * 1024;
 const upload = multer({
   storage,
   limits: {
-    fileSize: options.maxUploadBytes ?? 200 * 1024 * 1024 // 200MB max for rich image PPTs
+    // Busboy treats its file-size limit as exclusive. Leave one byte for the
+    // route to make the configured <= boundary authoritative.
+    fileSize: maxUploadBytes + 1
   }
 });
 
@@ -1150,7 +1153,7 @@ app.post("/api/ppts", requirePlanner, uploadSinglePpt, async (req, res) => {
       removeRejectedUpload(filePath);
       return res.status(400).json({ error: "替换目标格式无效" });
     }
-    if (fileSize > (options.maxUploadBytes ?? 200 * 1024 * 1024)) {
+    if (fileSize > maxUploadBytes) {
       removeRejectedUpload(filePath);
       return res.status(400).json({ error: "上传文件大小不能超过 200 MB" });
     }
@@ -1282,6 +1285,19 @@ app.post("/api/ppts", requirePlanner, uploadSinglePpt, async (req, res) => {
         if (fs.existsSync(candidatePreviewDir)) fs.renameSync(candidatePreviewDir, oldPreviewDir);
       } catch (promotionError) {
         console.error("Failed to promote replacement PPT preview:", promotionError);
+        try {
+          // Persistence has already completed, so restore both the original
+          // record and its preview before reporting the replacement failure.
+          pptsAtCommit[replacementIndex] = replacementTarget;
+          savePPTs(pptsAtCommit);
+          if (fs.existsSync(retiredPreviewDir)) {
+            if (fs.existsSync(oldPreviewDir)) fs.rmSync(oldPreviewDir, { recursive: true, force: true });
+            fs.renameSync(retiredPreviewDir, oldPreviewDir);
+          }
+        } catch (recoveryError) {
+          console.error("Failed to recover replacement PPT after preview promotion error:", recoveryError);
+        }
+        removeRejectedUpload(filePath, id);
         return res.status(500).json({ error: "上传失败: 无法发布替换案例预览" });
       }
 

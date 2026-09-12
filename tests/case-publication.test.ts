@@ -103,6 +103,13 @@ function uploadForm(fields: Record<string, string>, fileName = "case.ppt") {
   return body;
 }
 
+function uploadSizedForm(title: string, bytes: number) {
+  const body = new FormData();
+  body.set("title", title);
+  body.set("file", new Blob(["x".repeat(bytes)]), "case.ppt");
+  return body;
+}
+
 async function uploadPptxForm(title: string) {
   const body = new FormData();
   const archive = new JSZip();
@@ -139,6 +146,19 @@ test("case publication validates uploaded case metadata and cleans rejected file
   assert.deepEqual(JSON.parse(await readFile(path.join(fixture.dataDir, "ppts.json"), "utf8")), [existingCase]);
   assert.deepEqual(await readdir(path.join(fixture.uploadsDir, "ppts")), []);
   assert.deepEqual(await readdir(path.join(fixture.uploadsDir, "previews")), []);
+});
+
+test("case publication accepts the configured file-size boundary and rejects one byte over it", async (t) => {
+  const exactLimit = await startPublicationApp(t, 8);
+  const accepted = await exactLimit.request(uploadSizedForm("Exact limit", 8));
+  assert.equal(accepted.status, 200);
+
+  const overLimit = await startPublicationApp(t, 8);
+  const rejected = await overLimit.request(uploadSizedForm("Over limit", 9));
+  assert.equal(rejected.status, 400);
+  assert.match((await rejected.json()).error, /200\s*MB|文件.*大小/i);
+  assert.deepEqual(await readdir(path.join(overLimit.uploadsDir, "ppts")), []);
+  assert.deepEqual(await readdir(path.join(overLimit.uploadsDir, "previews")), []);
 });
 
 test("case publication explicitly replaces a conflicting case while preserving its public identity", async (t) => {
@@ -208,6 +228,34 @@ test("case replacement publishes prepared previews despite old artifact cleanup 
   assert.equal(preview.status, 200);
   assert.match(await preview.text(), /生产线平衡改善案例/);
   assert.equal(await readFile(oldFile, "utf8"), "old presentation");
+});
+
+test("case replacement restores the existing case when preview promotion fails", async (t) => {
+  const fixture = await startPublicationApp(t);
+  const oldFile = path.join(fixture.uploadsDir, "ppts", "existing.ppt");
+  const oldPreviewDir = path.join(fixture.uploadsDir, "previews", "existing-case");
+  await writeFile(oldFile, "old presentation");
+  await mkdir(oldPreviewDir);
+  await writeFile(path.join(oldPreviewDir, "cover.svg"), "old preview");
+
+  const originalRenameSync = fs.renameSync;
+  fs.renameSync = ((source: fs.PathLike, destination: fs.PathLike) => {
+    if (String(source).startsWith(path.join(fixture.uploadsDir, "previews", "ppt-"))) {
+      throw new Error("simulated preview promotion failure");
+    }
+    return originalRenameSync(source, destination);
+  }) as typeof fs.renameSync;
+  t.after(() => { fs.renameSync = originalRenameSync; });
+
+  const form = await uploadPptxForm("装配线节拍改善");
+  form.set("replaceCaseId", "existing-case");
+  const response = await fixture.request(form);
+  assert.equal(response.status, 500);
+  assert.deepEqual(JSON.parse(await readFile(path.join(fixture.dataDir, "ppts.json"), "utf8")), [existingCase]);
+  assert.equal(await readFile(oldFile, "utf8"), "old presentation");
+  assert.equal(await readFile(path.join(oldPreviewDir, "cover.svg"), "utf8"), "old preview");
+  assert.deepEqual(await readdir(path.join(fixture.uploadsDir, "ppts")), ["existing.ppt"]);
+  assert.deepEqual(await readdir(path.join(fixture.uploadsDir, "previews")), ["existing-case"]);
 });
 
 test("case publication cleans files and previews when PPTX parsing fails", async (t) => {
