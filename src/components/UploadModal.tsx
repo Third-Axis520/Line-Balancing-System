@@ -35,8 +35,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess }) 
   const titleInputRef = useRef<HTMLInputElement>(null);
 
   const validateFile = (selectedFile: File) => {
-    const extension = selectedFile.name.split('.').pop()?.toLowerCase();
-    if (extension !== 'ppt' && extension !== 'pptx') {
+    if (!/\.(ppt|pptx)$/i.test(selectedFile.name)) {
       setErrorMessage('仅支持上传 .pptx 或 .ppt 格式的幻灯片文件');
       return false;
     }
@@ -276,10 +275,8 @@ export const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess }) 
 
           {conflict && (
             <div
-              role="alertdialog"
-              aria-modal="true"
-              aria-labelledby="duplicate-case-title"
-              aria-describedby="duplicate-case-description"
+              aria-live="polite"
+              aria-atomic="true"
               className="rounded-xl border border-amber-500/50 bg-amber-950/30 p-3.5 space-y-3"
             >
               <div className="flex items-start gap-2">
